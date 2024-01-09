@@ -121,8 +121,8 @@ func prepareContentPages() *tview.Flex {
 	taskDetailPane = NewTaskDetailPane(taskRepo)
 
 	contents = tview.NewFlex().
-		AddItem(projectPane, 25, 1, true).
-		AddItem(taskPane, 0, 2, false)
+		AddItem(projectPane, 0, 1, true).
+		AddItem(taskPane, 0, 4, false)
 
 	return contents
 
@@ -141,11 +141,11 @@ func AskYesNo(text string, f func()) {
 
 	activePane := app.GetFocus()
 	modal := tview.NewModal().
-		SetText(text).
-		AddButtons([]string{"Yes", "No"}).
-		SetDoneFunc(func(buttonIndex int, buttonLabel string) {
-			if buttonLabel == "Yes" {
-				f()
+			SetText(text).
+			AddButtons([]string{"Yes", "No"}).
+			SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+				if buttonLabel == "Yes" {
+					f()
 			}
 			app.SetRoot(layout, true).EnableMouse(true)
 			app.SetFocus(activePane)
