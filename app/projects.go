@@ -96,7 +96,7 @@ func (pane *ProjectPane) addProjectList() {
 
 func (pane *ProjectPane) addProjectToList(i int, selectItem bool) {
 	// To avoid overriding of loop variables - https://www.calhoun.io/gotchas-and-common-mistakes-with-closures-in-go/
-	pane.list.AddItem("- "+pane.projects[i].Title, "", 0, func(idx int) func() {
+	pane.list.AddItem("- "+pane.projects[i].GetTitle(), "", 0, func(idx int) func() {
 		return func() { pane.activateProject(idx) }
 	}(i))
 
