@@ -124,6 +124,12 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 		return nil
 	}
 
+	switch event.Key() {
+	case tcell.KeyCtrlJ:
+		fmt.Println(pane.list.GetItemText(pane.list.GetCurrentItem()))
+		return nil
+	}
+
 	return event
 }
 
