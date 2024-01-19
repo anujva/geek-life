@@ -12,14 +12,16 @@ type Client struct {
 	BaseURL  string
 	Username string
 	Password string
+	APIToken string
 }
 
 // NewClient creates a new API client.
-func NewClient(baseURL, username, password string) *Client {
+func NewClient(baseURL, username, password, token string) *Client {
 	return &Client{
 		BaseURL:  baseURL,
 		Username: username,
 		Password: password,
+		APIToken: token,
 	}
 }
 
@@ -40,8 +42,15 @@ func (c *Client) MakeRequest(method, url string, payload []byte) ([]byte, error)
 
 	// Encode credentials
 	auth := base64.StdEncoding.EncodeToString([]byte(c.Username + ":" + c.Password))
-	req.Header.Add("Authorization", "Basic "+auth)
+	if c.APIToken != "" {
+		req.Header.Add("Authorization", "Bearer "+c.APIToken)
+	} else {
+		req.Header.Add("Authorization", "Basic "+auth)
+	}
 
+	if method == "POST" {
+		req.Header.Add("Content-Type", "application/json")
+	}
 	// Perform the request
 	resp, err := client.Do(req)
 	if err != nil {

@@ -1,4 +1,4 @@
-package main
+package jira
 
 type JiraIssueResult struct {
 	Expand     string      `json:"expand"`
