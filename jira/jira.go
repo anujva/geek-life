@@ -15,6 +15,16 @@ type Jira interface {
 	DescribeTask(taskID string) (*JiraIssue, error)
 }
 
+func NewJiraClient(url, username, password, token, projectKey string) Jira {
+	j := jira{
+		username:   username,
+		password:   password,
+		projectKey: projectKey,
+	}
+	j.client = *api.NewClient(url, username, password, token)
+	return &j
+}
+
 type jira struct {
 	username   string
 	password   string

@@ -2,12 +2,14 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"strings"
 	"unicode"
 
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
 )
@@ -21,6 +23,7 @@ type ProjectPane struct {
 	repo                repository.ProjectRepository
 	activeProject       *model.Project
 	projectListStarting int // The index in list where project names starts
+	jira                jira.Jira
 }
 
 // NewProjectPane initializes
@@ -30,6 +33,13 @@ func NewProjectPane(repo repository.ProjectRepository) *ProjectPane {
 		list:       tview.NewList().ShowSecondaryText(false),
 		newProject: makeLightTextInput("+[New Project]"),
 		repo:       repo,
+		jira: jira.NewJiraClient(
+			"http://localhost:8080",
+			"anujva@gmail.com",
+			"",
+			os.Getenv("JIRA_API_TOKEN"),
+			"SRE",
+		),
 	}
 
 	pane.newProject.SetDoneFunc(func(key tcell.Key) {
@@ -126,7 +136,16 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 
 	switch event.Key() {
 	case tcell.KeyCtrlJ:
-		fmt.Println(pane.list.GetItemText(pane.list.GetCurrentItem()))
+		// Get the project that is currently selected
+		project := pane.projects[pane.list.GetCurrentItem()]
+		if project.Jira == "" {
+			p, err := pane.jira.CreateEpic(project.Title, project.Title)
+			if err != nil {
+				fmt.Println(err)
+			}
+			project.Jira = p
+			_ = pane.repo.Update(&project)
+		}
 		return nil
 	}
 

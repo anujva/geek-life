@@ -141,15 +141,19 @@ func AskYesNo(text string, f func()) {
 
 	activePane := app.GetFocus()
 	modal := tview.NewModal().
-			SetText(text).
-			AddButtons([]string{"Yes", "No"}).
-			SetDoneFunc(func(buttonIndex int, buttonLabel string) {
+		SetText(text).
+		AddButtons([]string{"Yes", "No"}).
+		SetDoneFunc(
+			func(
+				_ int,
+				buttonLabel string,
+			) {
 				if buttonLabel == "Yes" {
 					f()
-			}
-			app.SetRoot(layout, true).EnableMouse(true)
-			app.SetFocus(activePane)
-		})
+				}
+				app.SetRoot(layout, true).EnableMouse(true)
+				app.SetFocus(activePane)
+			})
 
 	pages := tview.NewPages().
 		AddPage("background", layout, true, true).
