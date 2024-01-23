@@ -44,7 +44,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 			"issuetype": map[string]string{
 				"name": "Epic",
 			},
-			"customfield_10104": title,
+			"customfield_10105": title,
 		},
 	}
 
@@ -58,7 +58,6 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	fmt.Println(string(b))
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {

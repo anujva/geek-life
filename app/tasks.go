@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"time"
 	"unicode"
@@ -10,6 +11,7 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
+	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
 )
@@ -25,6 +27,7 @@ type TaskPane struct {
 	projectRepo repository.ProjectRepository
 	taskRepo    repository.TaskRepository
 	hint        *tview.TextView
+	jira        jira.Jira
 }
 
 // NewTaskPane initializes and configures a TaskPane
@@ -36,6 +39,13 @@ func NewTaskPane(projectRepo repository.ProjectRepository, taskRepo repository.T
 		projectRepo: projectRepo,
 		taskRepo:    taskRepo,
 		hint:        tview.NewTextView().SetTextColor(tcell.ColorYellow).SetTextAlign(tview.AlignCenter),
+		jira: jira.NewJiraClient(
+			"http://localhost:8080",
+			"anujva@gmail.com",
+			"",
+			os.Getenv("JIRA_API_TOKEN"),
+			"SRE",
+		),
 	}
 
 	pane.list.SetSelectedBackgroundColor(tcell.ColorDarkBlue)

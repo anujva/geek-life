@@ -137,7 +137,9 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 	switch event.Key() {
 	case tcell.KeyCtrlJ:
 		// Get the project that is currently selected
-		project := pane.projects[pane.list.GetCurrentItem()]
+		selectedIndex := pane.list.GetCurrentItem()
+		projectindex := selectedIndex - pane.projectListStarting
+		project := pane.projects[projectindex]
 		if project.Jira == "" {
 			p, err := pane.jira.CreateEpic(project.Title, project.Title)
 			if err != nil {
@@ -146,6 +148,8 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 			project.Jira = p
 			_ = pane.repo.Update(&project)
 		}
+		pane.loadListItems(true)
+		pane.list.SetCurrentItem(selectedIndex)
 		return nil
 	}
 
