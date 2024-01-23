@@ -1,0 +1,18 @@
+version: '2'
+
+services:
+  jira:
+    image: atlassian/jira-software:latest
+    ports:
+      - 8080:8080
+    volumes:
+      - jiradata:/var/atlassian/application-data/jira
+    networks:
+      - jira
+
+volumes:
+  jiradata:
+
+networks:
+  jira:
+
