@@ -9,7 +9,9 @@ import (
 
 type Jira interface {
 	CreateEpic(title, description string) (string, error)
+	UpdateEpic(title, description string, epicID string) (string, error)
 	CreateTask(title, description string, epicID string) (string, error)
+	UpdateTask(title, description string, taskID string) (string, error)
 	ListEpics() ([]JiraIssue, error)
 	DescribeEpic(epicID string) (*JiraIssue, error)
 	DescribeTask(taskID string) (*JiraIssue, error)
@@ -44,7 +46,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 			"issuetype": map[string]string{
 				"name": "Epic",
 			},
-			"customfield_10105": title,
+			"customfield_10104": title,
 		},
 	}
 
@@ -55,6 +57,39 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 
 	url := "/rest/api/2/issue"
 	b, err := j.client.MakeRequest("POST", url, payloadBytes)
+	if err != nil {
+		return "", err
+	}
+	epic := &JiraIssue{}
+	err = json.Unmarshal(b, epic)
+	if err != nil {
+		fmt.Println("error unmarshalling", err)
+		return "", err
+	}
+	return epic.ID, nil
+}
+
+func (j *jira) UpdateEpic(title, description string, epicID string) (string, error) {
+	// Construct the request payload
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"project": map[string]string{
+				"key": j.projectKey,
+			},
+			"summary":     title,
+			"description": description,
+			"issuetype": map[string]string{
+				"name": "Epic",
+			},
+			"customfield_10104": title,
+		},
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf("/rest/api/2/issue/%s", epicID)
+	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
 	if err != nil {
 		return "", err
 	}
@@ -94,6 +129,32 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 		return "", err
 	}
 	fmt.Println(string(b))
+	epic := &JiraIssue{}
+	err = json.Unmarshal(b, epic)
+	if err != nil {
+		fmt.Println("error unmarshalling", err)
+		return "", err
+	}
+	return epic.ID, nil
+}
+
+func (j *jira) UpdateTask(title, description string, taskID string) (string, error) {
+	// Construct the request payload
+	payload := map[string]interface{}{
+		"fields": map[string]interface{}{
+			"summary":     title,
+			"description": description,
+		},
+	}
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return "", err
+	}
+	url := fmt.Sprintf("/rest/api/2/issue/%s", taskID)
+	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
+	if err != nil {
+		return "", err
+	}
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
