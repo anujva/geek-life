@@ -48,7 +48,7 @@ func (c *Client) MakeRequest(method, url string, payload []byte) ([]byte, error)
 		req.Header.Add("Authorization", "Basic "+auth)
 	}
 
-	if method == "POST" {
+	if method == "POST" || method == "PUT" {
 		req.Header.Add("Content-Type", "application/json")
 	}
 	// Perform the request

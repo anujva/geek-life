@@ -22,7 +22,7 @@ type Jira interface {
 	CreateEpic(title, description string) (string, error)
 	UpdateEpic(title, description string, epicID string) (string, error)
 	CreateTask(title, description string, epicID string) (string, error)
-	UpdateTask(title, description string, taskID string) (string, error)
+	UpdateTask(title, description string, completed bool, taskID string) error
 	ListEpics() ([]JiraIssue, error)
 	DescribeEpic(epicID string) (*JiraIssue, error)
 	DescribeTask(taskID string) (*JiraIssue, error)
@@ -125,7 +125,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 			"issuetype": map[string]string{
 				"name": "Task",
 			},
-			"customfield_10109": epicID,
+			"customfield_10102": epicID,
 		},
 	}
 
@@ -149,34 +149,57 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 	return epic.ID, nil
 }
 
+func getIDFromCompleted(completed bool) string {
+	if completed {
+		return "41"
+	}
+	return "11"
+}
+
 func (j *jira) UpdateTask(
 	title,
 	description string,
+	completed bool,
 	taskID string,
-) (string, error) {
+) error {
 	// Construct the request payload
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
+			"project": map[string]string{
+				"key": j.projectKey,
+			},
 			"summary":     title,
 			"description": description,
 		},
 	}
 	payloadBytes, err := json.Marshal(payload)
 	if err != nil {
-		return "", err
+		return err
 	}
+	fmt.Fprintf(file, "Bytes: %s\n", payloadBytes)
 	url := fmt.Sprintf("/rest/api/2/issue/%s", taskID)
 	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
 	if err != nil {
-		return "", err
+		return err
 	}
-	epic := &JiraIssue{}
-	err = json.Unmarshal(b, epic)
+	fmt.Fprintf(file, "B: %s\n", b)
+	// Construct the request payload
+	payload = map[string]interface{}{
+		"transition": map[string]interface{}{
+			"id": getIDFromCompleted(completed),
+		},
+	}
+	payloadBytes, err = json.Marshal(payload)
 	if err != nil {
-		fmt.Fprintf(file, "error unmarshalling: %v\n", err)
-		return "", err
+		return err
 	}
-	return epic.ID, nil
+	fmt.Fprintf(file, "Bytes: %s\n", payloadBytes)
+	url = fmt.Sprintf("/rest/api/2/issue/%s/transitions", taskID)
+	_, err = j.client.MakeRequest("POST", url, payloadBytes)
+	if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (j *jira) ListEpics() ([]JiraIssue, error) {

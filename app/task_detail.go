@@ -143,6 +143,15 @@ func (td *TaskDetailPane) updateToggleDisplay() {
 func (td *TaskDetailPane) toggleTaskStatus() {
 	status := !td.task.Completed
 	if taskRepo.UpdateField(td.task, "Completed", status) == nil {
+		if td.task.JiraID != "" {
+			fmt.Fprintf(file, "updating task status in jira: %s\n", td.task.JiraID)
+			_ = td.jira.UpdateTask(
+				td.task.Title,
+				td.task.Details,
+				status,
+				td.task.JiraID,
+			)
+		}
 		td.task.Completed = status
 		taskPane.ReloadCurrentTask()
 	}
