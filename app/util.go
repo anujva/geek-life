@@ -108,7 +108,21 @@ func makeTaskListingTitle(task model.Task) string {
 		}
 	}
 
-	return fmt.Sprintf("[%s]%s %s%s", getTaskTitleColor(task), checkbox, prefix, task.Title)
+	return fmt.Sprintf(
+		"[%s]%s %s%s",
+		getTaskTitleColor(task),
+		checkbox,
+		prefix,
+		getTaskTitleJira(task),
+	)
+}
+
+func getTaskTitleJira(task model.Task) string {
+	jira := fmt.Sprintf("%s [No JIRA]", task.Title)
+	if task.JiraID != "" {
+		jira = fmt.Sprintf("%s [lime]Jira: %s", task.Title, task.JiraID)
+	}
+	return jira
 }
 
 // `findProjectByID` is unused (deadcode)
