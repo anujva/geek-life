@@ -3,9 +3,20 @@ package jira
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 
 	"github.com/ajaxray/geek-life/api"
 )
+
+var file *os.File
+
+func init() {
+	var err error
+	file, err = os.Create("output.txt")
+	if err != nil {
+		panic(err)
+	}
+}
 
 type Jira interface {
 	CreateEpic(title, description string) (string, error)
@@ -63,7 +74,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
-		fmt.Println("error unmarshalling", err)
+		fmt.Fprintf(file, "error unmarshalling; %+v\n", err)
 		return "", err
 	}
 	return epic.ID, nil
@@ -96,7 +107,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
-		fmt.Println("error unmarshalling", err)
+		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
 		return "", err
 	}
 	return epic.ID, nil
@@ -114,7 +125,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 			"issuetype": map[string]string{
 				"name": "Task",
 			},
-			"customfield_10108": epicID,
+			"customfield_10109": epicID,
 		},
 	}
 
@@ -128,7 +139,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 	if err != nil {
 		return "", err
 	}
-	fmt.Println(string(b))
+	fmt.Fprintf(file, "Task: %s\n", string(b))
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
@@ -138,7 +149,11 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 	return epic.ID, nil
 }
 
-func (j *jira) UpdateTask(title, description string, taskID string) (string, error) {
+func (j *jira) UpdateTask(
+	title,
+	description string,
+	taskID string,
+) (string, error) {
 	// Construct the request payload
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
@@ -158,7 +173,7 @@ func (j *jira) UpdateTask(title, description string, taskID string) (string, err
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
-		fmt.Println("error unmarshalling", err)
+		fmt.Fprintf(file, "error unmarshalling: %v\n", err)
 		return "", err
 	}
 	return epic.ID, nil

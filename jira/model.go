@@ -330,6 +330,7 @@ type Fields struct {
 	Customfield11203              any               `json:"customfield_11203,omitempty"`
 	Customfield10900              any               `json:"customfield_10900,omitempty"`
 	Customfield10100              any               `json:"customfield_10100,omitempty"`
+	Customfield10109              string            `json:"customfield_10109,omitempty"`
 	Priority                      Priority          `json:"priority,omitempty"`
 	Timeestimate                  any               `json:"timeestimate,omitempty"`
 	Customfield11429              Customfield11429  `json:"customfield_11429,omitempty"`

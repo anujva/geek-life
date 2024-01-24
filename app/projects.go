@@ -143,7 +143,7 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 		if project.Jira == "" {
 			p, err := pane.jira.CreateEpic(project.Title, project.Title)
 			if err != nil {
-				fmt.Println(err)
+				fmt.Fprintf(file, "%+v", err)
 			}
 			project.Jira = p
 			_ = pane.repo.Update(&project)

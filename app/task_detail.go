@@ -15,6 +15,7 @@ import (
 	"github.com/pgavlin/femto/runtime"
 	"github.com/rivo/tview"
 
+	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
 	"github.com/ajaxray/geek-life/util"
@@ -35,6 +36,7 @@ type TaskDetailPane struct {
 	colorScheme      femto.Colorscheme
 	taskRepo         repository.TaskRepository
 	task             *model.Task
+	jira             jira.Jira
 }
 
 // NewTaskDetailPane initializes and configures a TaskDetailPane
@@ -45,6 +47,13 @@ func NewTaskDetailPane(taskRepo repository.TaskRepository) *TaskDetailPane {
 		taskDateDisplay:  tview.NewTextView().SetDynamicColors(true),
 		taskStatusToggle: makeButton("Complete", nil).SetLabelColor(tcell.ColorLightGray),
 		taskRepo:         taskRepo,
+		jira: jira.NewJiraClient(
+			"http://localhost:8080",
+			"anujva@gmail.com",
+			"",
+			os.Getenv("JIRA_API_TOKEN"),
+			"SRE",
+		),
 	}
 
 	pane.prepareDetailsEditor()

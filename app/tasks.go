@@ -16,6 +16,16 @@ import (
 	"github.com/ajaxray/geek-life/repository"
 )
 
+var file *os.File
+
+func init() {
+	var err error
+	file, err = os.Create("output.txt")
+	if err != nil {
+		panic(err)
+	}
+}
+
 // TaskPane displays tasks of current TaskList or Project
 type TaskPane struct {
 	*tview.Flex
@@ -125,6 +135,39 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case 'n':
 		app.SetFocus(pane.newTask)
+		return nil
+	}
+
+	switch event.Key() {
+	case tcell.KeyCtrlJ:
+		// Get the project that is currently selected
+		selectedIndex := pane.list.GetCurrentItem()
+		task := pane.tasks[selectedIndex]
+		fmt.Fprintf(file, "Task: %+v\n", task)
+		if task.JiraID == "" {
+			project, err := pane.projectRepo.GetByID(task.ProjectID)
+			if err != nil {
+				fmt.Fprintf(file, "%+v\n", err)
+			}
+			fmt.Fprintf(file, "Epic ID: %s\n", project.Jira)
+			issue, err := pane.jira.DescribeEpic(project.Jira)
+			if err != nil {
+				fmt.Fprintf(file, "%+v\n", err)
+				return nil
+			}
+			fmt.Fprintf(file, "Epic Link: %+v\n", issue.Key)
+			t, err := pane.jira.CreateTask(
+				task.Title,
+				task.Details,
+				issue.Key,
+			)
+			if err != nil {
+				fmt.Fprintf(file, "%+v\n", err)
+			}
+			task.JiraID = t
+			_ = pane.taskRepo.Update(&task)
+			pane.LoadProjectTasks(project)
+		}
 		return nil
 	}
 
