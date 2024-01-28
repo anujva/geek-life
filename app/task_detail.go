@@ -48,10 +48,10 @@ func NewTaskDetailPane(taskRepo repository.TaskRepository) *TaskDetailPane {
 		taskStatusToggle: makeButton("Complete", nil).SetLabelColor(tcell.ColorLightGray),
 		taskRepo:         taskRepo,
 		jira: jira.NewJiraClient(
-			"http://localhost:8080",
-			"anujva@gmail.com",
-			"",
+			"https://thumbtack.atlassian.net",
+			"anujvarma@thumbtack.com",
 			os.Getenv("JIRA_API_TOKEN"),
+			"",
 			"SRE",
 		),
 	}

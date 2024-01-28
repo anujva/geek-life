@@ -34,10 +34,10 @@ func NewProjectPane(repo repository.ProjectRepository) *ProjectPane {
 		newProject: makeLightTextInput("+[New Project]"),
 		repo:       repo,
 		jira: jira.NewJiraClient(
-			"http://localhost:8080",
-			"anujva@gmail.com",
-			"",
+			"https://thumbtack.atlassian.net",
+			"anujvarma@thumbtack.com",
 			os.Getenv("JIRA_API_TOKEN"),
+			"",
 			"SRE",
 		),
 	}
