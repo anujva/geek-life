@@ -50,10 +50,10 @@ func NewTaskPane(projectRepo repository.ProjectRepository, taskRepo repository.T
 		taskRepo:    taskRepo,
 		hint:        tview.NewTextView().SetTextColor(tcell.ColorYellow).SetTextAlign(tview.AlignCenter),
 		jira: jira.NewJiraClient(
-			"http://localhost:8080",
-			"anujva@gmail.com",
-			"",
+			"https://thumbtack.atlassian.net",
+			"anujvarma@thumbtack.com",
 			os.Getenv("JIRA_API_TOKEN"),
+			"",
 			"SRE",
 		),
 	}
@@ -167,6 +167,7 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 			task.JiraID = t
 			_ = pane.taskRepo.Update(&task)
 			pane.LoadProjectTasks(project)
+			pane.list.SetCurrentItem(selectedIndex)
 		}
 		return nil
 	}

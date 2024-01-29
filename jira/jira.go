@@ -35,6 +35,8 @@ func NewJiraClient(url, username, password, token, projectKey string) Jira {
 		projectKey: projectKey,
 	}
 	j.client = *api.NewClient(url, username, password, token)
+	j.config = make(map[string]string)
+	j.UpdateConfig()
 	return &j
 }
 
@@ -43,6 +45,36 @@ type jira struct {
 	password   string
 	client     api.Client
 	projectKey string
+	config     map[string]string
+}
+
+func (j *jira) UpdateConfig() {
+	b, err := j.client.MakeRequest(
+		"GET",
+		"/rest/api/2/field",
+		nil,
+	)
+	if err != nil {
+		fmt.Println("error making request", err)
+		os.Exit(12)
+	}
+
+	fmt.Fprintf(file, "%s", string(b))
+	v := make([]Field, 0)
+	err = json.Unmarshal(b, &v)
+	if err != nil {
+		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
+		return
+	}
+
+	for _, field := range v {
+		if field.Name == "Epic Name" {
+			j.config["epicName"] = field.ID
+		}
+		if field.Name == "Parent" {
+			j.config["epicLink"] = field.ID
+		}
+	}
 }
 
 func (j *jira) CreateEpic(title, description string) (string, error) {
@@ -57,7 +89,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 			"issuetype": map[string]string{
 				"name": "Epic",
 			},
-			"customfield_10104": title,
+			j.config["epicName"]: title,
 		},
 	}
 
@@ -92,7 +124,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 			"issuetype": map[string]string{
 				"name": "Epic",
 			},
-			"customfield_10104": title,
+			j.config["epicName"]: title,
 		},
 	}
 	payloadBytes, err := json.Marshal(payload)
@@ -125,7 +157,9 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 			"issuetype": map[string]string{
 				"name": "Task",
 			},
-			"customfield_10102": epicID,
+			j.config["epicLink"]: map[string]string{
+				"key": epicID,
+			},
 		},
 	}
 
@@ -140,13 +174,13 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 		return "", err
 	}
 	fmt.Fprintf(file, "Task: %s\n", string(b))
-	epic := &JiraIssue{}
-	err = json.Unmarshal(b, epic)
+	task := &JiraIssue{}
+	err = json.Unmarshal(b, task)
 	if err != nil {
 		fmt.Println("error unmarshalling", err)
 		return "", err
 	}
-	return epic.ID, nil
+	return task.Key, nil
 }
 
 func getIDFromCompleted(completed bool) string {
@@ -191,12 +225,14 @@ func (j *jira) UpdateTask(
 	}
 	payloadBytes, err = json.Marshal(payload)
 	if err != nil {
+		fmt.Fprintf(file, "Error while marshing payload: %+v\n", err)
 		return err
 	}
 	fmt.Fprintf(file, "Bytes: %s\n", payloadBytes)
 	url = fmt.Sprintf("/rest/api/2/issue/%s/transitions", taskID)
 	_, err = j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
+		fmt.Fprintf(file, "Error while calling transitions: %+v\n", err)
 		return err
 	}
 	return nil

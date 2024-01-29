@@ -1,5 +1,22 @@
 package jira
 
+type Field struct {
+	ID          string `json:"id"`
+	Name        string `json:"name"`
+	Custom      bool   `json:"custom"`
+	Orderable   bool   `json:"orderable"`
+	Navigable   bool   `json:"navigable"`
+	Searchable  bool   `json:"searchable"`
+	ClauseNames []any  `json:"clauseNames"`
+	Schema      Schema `json:"schema"`
+}
+
+type Schema struct {
+	Type   string `json:"type"`
+	Items  string `json:"items"`
+	System string `json:"system"`
+}
+
 type JiraIssueResult struct {
 	Expand     string      `json:"expand"`
 	StartAt    int         `json:"startAt"`
