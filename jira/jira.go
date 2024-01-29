@@ -212,7 +212,7 @@ func (j *jira) UpdateTask(
 	}
 	fmt.Fprintf(file, "Bytes: %s\n", payloadBytes)
 	url := fmt.Sprintf("/rest/api/2/issue/%s", taskID)
-	b, err := j.client.MakeRequest("POST", url, payloadBytes)
+	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
 	if err != nil {
 		return err
 	}
