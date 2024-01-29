@@ -176,7 +176,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 		fmt.Println("error unmarshalling", err)
 		return "", err
 	}
-	return task.ID, nil
+	return task.Key, nil
 }
 
 func getIDFromCompleted(completed bool) string {
