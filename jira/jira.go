@@ -61,7 +61,11 @@ func (j *jira) UpdateConfig() {
 
 	fmt.Fprintf(file, "%s", string(b))
 	v := make([]Field, 0)
-	json.Unmarshal(b, &v)
+	err = json.Unmarshal(b, &v)
+	if err != nil {
+		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
+		return
+	}
 
 	for _, field := range v {
 		if field.Name == "Epic Name" {
