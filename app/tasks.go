@@ -17,6 +17,17 @@ import (
 )
 
 var file *os.File
+var welcomeText = `Welcome to the organized life!
+------------------------------
+Create TaskList/Project at the bottom of Projects pane.
+(Press p,n)
+
+Help - https://bit.ly/cli-task`
+
+var welcomeText2 = `Select a TaskList/Project (Press Enter) to load tasks.
+Or create a new Project (Press p,n).
+
+Help - https://bit.ly/cli-task`
 
 func init() {
 	var err error
@@ -270,9 +281,9 @@ func (pane *TaskPane) ReloadCurrentTask() {
 
 func (pane TaskPane) setHintMessage() {
 	if len(projectPane.projects) == 0 {
-		pane.hint.SetText("Welcome to the organized life!\n------------------------------\n Create TaskList/Project at the bottom of Projects pane.\n (Press p,n) \n\nHelp - https://bit.ly/cli-task")
+		pane.hint.SetText(welcomeText)
 	} else {
-		pane.hint.SetText("Select a TaskList/Project (Press Enter) to load tasks.\nOr create a new Project (Press p,n).\n\nHelp - https://bit.ly/cli-task")
+		pane.hint.SetText(welcomeText2)
 	}
 
 	// Add: For help - https://bit.ly/cli-task
