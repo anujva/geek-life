@@ -21,8 +21,10 @@ import (
 	"github.com/ajaxray/geek-life/util"
 )
 
-const dateLayoutISO = "2006-01-02"
-const dateLayoutHuman = "02 Jan, Monday"
+const (
+	dateLayoutISO   = "2006-01-02"
+	dateLayoutHuman = "02 Jan, Monday"
+)
 
 // TaskDetailPane displays detailed info of a Task
 type TaskDetailPane struct {
@@ -52,7 +54,7 @@ func NewTaskDetailPane(taskRepo repository.TaskRepository) *TaskDetailPane {
 			"anujvarma@thumbtack.com",
 			os.Getenv("JIRA_API_TOKEN"),
 			"",
-			"SRE",
+			"DX",
 		),
 	}
 
@@ -61,7 +63,9 @@ func NewTaskDetailPane(taskRepo repository.TaskRepository) *TaskDetailPane {
 	toggleHint := tview.NewTextView().SetTextColor(tcell.ColorDimGray).SetText("<space> to toggle")
 	pane.taskStatusToggle.SetSelectedFunc(pane.toggleTaskStatus)
 
-	pane.editorHint = tview.NewTextView().SetText(" e = edit, v = external, ↓↑ = scroll").SetTextColor(tcell.ColorDimGray)
+	pane.editorHint = tview.NewTextView().
+		SetText(" e = edit, v = external, ↓↑ = scroll").
+		SetTextColor(tcell.ColorDimGray)
 
 	// Prepare static (no external interaction) elements
 	editorLabel := tview.NewFlex().
@@ -105,7 +109,6 @@ func (td *TaskDetailPane) Export() {
 }
 
 func (td *TaskDetailPane) makeDateRow() *tview.Flex {
-
 	td.taskDate = makeLightTextInput("yyyy-mm-dd").
 		SetLabel("Set:").
 		SetLabelColor(tcell.ColorWhiteSmoke).
@@ -184,7 +187,6 @@ func (td *TaskDetailPane) setTaskDate(unixDate int64, update bool) {
 }
 
 func (td *TaskDetailPane) prepareDetailsEditor() {
-
 	td.taskDetailView = femto.NewView(makeBufferFromString(""))
 	td.taskDetailView.SetRuntimeFiles(runtime.Files)
 
@@ -248,10 +250,12 @@ func (td *TaskDetailPane) deactivateEditor() {
 }
 
 func (td *TaskDetailPane) editInExternalEditor() {
-
 	tmpFileName, err := writeToTmpFile(td.task.Details)
 	if err != nil {
-		statusBar.showForSeconds("[red::]Failed to create tmp file. Try in-app editing by pressing i", 5)
+		statusBar.showForSeconds(
+			"[red::]Failed to create tmp file. Try in-app editing by pressing i",
+			5,
+		)
 		return
 	}
 

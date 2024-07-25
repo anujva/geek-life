@@ -16,13 +16,15 @@ import (
 	"github.com/ajaxray/geek-life/repository"
 )
 
-var file *os.File
-var welcomeText = `Welcome to the organized life!
+var (
+	file        *os.File
+	welcomeText = `Welcome to the organized life!
 ------------------------------
 Create TaskList/Project at the bottom of Projects pane.
 (Press p,n)
 
 Help - https://bit.ly/cli-task`
+)
 
 var welcomeText2 = `Select a TaskList/Project (Press Enter) to load tasks.
 Or create a new Project (Press p,n).
@@ -52,20 +54,25 @@ type TaskPane struct {
 }
 
 // NewTaskPane initializes and configures a TaskPane
-func NewTaskPane(projectRepo repository.ProjectRepository, taskRepo repository.TaskRepository) *TaskPane {
+func NewTaskPane(
+	projectRepo repository.ProjectRepository,
+	taskRepo repository.TaskRepository,
+) *TaskPane {
 	pane := TaskPane{
 		Flex:        tview.NewFlex().SetDirection(tview.FlexRow),
 		list:        tview.NewList().ShowSecondaryText(false),
 		newTask:     makeLightTextInput("+[New Task]"),
 		projectRepo: projectRepo,
 		taskRepo:    taskRepo,
-		hint:        tview.NewTextView().SetTextColor(tcell.ColorYellow).SetTextAlign(tview.AlignCenter),
+		hint: tview.NewTextView().
+			SetTextColor(tcell.ColorYellow).
+			SetTextAlign(tview.AlignCenter),
 		jira: jira.NewJiraClient(
 			"https://thumbtack.atlassian.net",
 			"anujvarma@thumbtack.com",
 			os.Getenv("JIRA_API_TOKEN"),
 			"",
-			"SRE",
+			"DX",
 		),
 	}
 
@@ -257,7 +264,6 @@ func (pane *TaskPane) ActivateTask(idx int) {
 	taskDetailPane.SetTask(pane.activeTask)
 
 	contents.AddItem(taskDetailPane, 0, 3, false)
-
 }
 
 // ClearCompletedTasks removes tasks from current list that are in completed state

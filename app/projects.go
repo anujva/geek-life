@@ -38,7 +38,7 @@ func NewProjectPane(repo repository.ProjectRepository) *ProjectPane {
 			"anujvarma@thumbtack.com",
 			os.Getenv("JIRA_API_TOKEN"),
 			"",
-			"SRE",
+			"DX",
 		),
 	}
 
