@@ -16,17 +16,19 @@ var blankCell = tview.NewTextView()
 
 func makeHorizontalLine(lineChar rune, color tcell.Color) *tview.TextView {
 	hr := tview.NewTextView()
-	hr.SetDrawFunc(func(screen tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
-		// Draw a horizontal line across the middle of the box.
-		style := tcell.StyleDefault.Foreground(color).Background(tcell.ColorBlack)
-		centerY := y + height/2
-		for cx := x; cx < x+width; cx++ {
-			screen.SetContent(cx, centerY, lineChar, nil, style)
-		}
+	hr.SetDrawFunc(
+		func(screen tcell.Screen, x int, y int, width int, height int) (int, int, int, int) {
+			// Draw a horizontal line across the middle of the box.
+			style := tcell.StyleDefault.Foreground(color).Background(tcell.ColorBlack)
+			centerY := y + height/2
+			for cx := x; cx < x+width; cx++ {
+				screen.SetContent(cx, centerY, lineChar, nil, style)
+			}
 
-		// Space for other content.
-		return x + 1, centerY + 1, width - 2, height - (centerY + 1 - y)
-	})
+			// Space for other content.
+			return x + 1, centerY + 1, width - 2, height - (centerY + 1 - y)
+		},
+	)
 
 	return hr
 }

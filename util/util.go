@@ -21,7 +21,9 @@ func ConnectStorm(dbFilePath string) *storm.DB {
 	if dbFilePath != "" {
 		info, err := os.Stat(dbFilePath)
 		if err == nil && info.IsDir() {
-			fmt.Println("Mentioned DB path is a directory. Please specify a file or ignore to create automatically in home directory.")
+			fmt.Println(
+				"Mentioned DB path is a directory. Please specify a file or ignore to create automatically in home directory.",
+			)
 			os.Exit(1)
 		}
 
@@ -75,7 +77,7 @@ func UnixToTime(timestamp string) time.Time {
 func LogIfError(err error, msgOrPattern string, args ...interface{}) bool {
 	if err != nil {
 		message := fmt.Sprintf(msgOrPattern, args...)
-		log.Printf("%s: %w\n", message, err)
+		log.Printf("%s: %v\n", message, err)
 
 		return true
 	}

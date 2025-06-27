@@ -39,23 +39,30 @@ type TaskDetailPane struct {
 	taskRepo         repository.TaskRepository
 	task             *model.Task
 	jira             jira.Jira
+	jiraConfig       util.JiraConfig
 }
 
 // NewTaskDetailPane initializes and configures a TaskDetailPane
 func NewTaskDetailPane(taskRepo repository.TaskRepository) *TaskDetailPane {
+	jiraConfig := util.GetJiraConfig()
+
 	pane := TaskDetailPane{
 		Flex:             tview.NewFlex().SetDirection(tview.FlexRow),
 		header:           NewTaskDetailHeader(taskRepo),
 		taskDateDisplay:  tview.NewTextView().SetDynamicColors(true),
 		taskStatusToggle: makeButton("Complete", nil).SetLabelColor(tcell.ColorLightGray),
 		taskRepo:         taskRepo,
-		jira: jira.NewJiraClient(
-			"https://thumbtack.atlassian.net",
-			"anujvarma@thumbtack.com",
-			os.Getenv("JIRA_API_TOKEN"),
-			"",
-			"DX",
-		),
+		jiraConfig:       jiraConfig,
+	}
+
+	if jiraConfig.IsConfigured() {
+		pane.jira = jira.NewJiraClient(
+			jiraConfig.URL,
+			jiraConfig.Username,
+			jiraConfig.APIToken,
+			jiraConfig.APIToken,
+			jiraConfig.ProjectKey,
+		)
 	}
 
 	pane.prepareDetailsEditor()
@@ -146,14 +153,18 @@ func (td *TaskDetailPane) updateToggleDisplay() {
 func (td *TaskDetailPane) toggleTaskStatus() {
 	status := !td.task.Completed
 	if taskRepo.UpdateField(td.task, "Completed", status) == nil {
-		if td.task.JiraID != "" {
-			fmt.Fprintf(file, "updating task status in jira: %s\n", td.task.JiraID)
-			_ = td.jira.UpdateTask(
+		if td.task.JiraID != "" && td.jira != nil {
+			err := td.jira.UpdateTask(
 				td.task.Title,
 				td.task.Details,
 				status,
 				td.task.JiraID,
 			)
+			if err != nil {
+				statusBar.showForSeconds("[red]Failed to update JIRA task: "+err.Error(), 5)
+			} else {
+				statusBar.showForSeconds("[lime]JIRA task updated", 3)
+			}
 		}
 		td.task.Completed = status
 		taskPane.ReloadCurrentTask()

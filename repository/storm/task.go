@@ -64,7 +64,20 @@ func (t *taskRepository) GetByUUID(UUID string) (model.Task, error) {
 	panic("implement me")
 }
 
-func (t *taskRepository) Create(project model.Project, title, details, UUID string, dueDate int64) (model.Task, error) {
+func (t *taskRepository) GetByJiraID(jiraID string) (*model.Task, error) {
+	var task model.Task
+	err := t.DB.One("JiraID", jiraID, &task)
+	if err != nil {
+		return nil, err
+	}
+	return &task, nil
+}
+
+func (t *taskRepository) Create(
+	project model.Project,
+	title, details, UUID string,
+	dueDate int64,
+) (model.Task, error) {
 	task := model.Task{
 		ProjectID: project.ID,
 		Title:     title,
@@ -75,6 +88,10 @@ func (t *taskRepository) Create(project model.Project, title, details, UUID stri
 
 	err := t.DB.Save(&task)
 	return task, err
+}
+
+func (t *taskRepository) CreateTask(task *model.Task) error {
+	return t.DB.Save(task)
 }
 
 func (t *taskRepository) Update(task *model.Task) error {

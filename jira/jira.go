@@ -24,6 +24,7 @@ type Jira interface {
 	CreateTask(title, description string, epicID string) (string, error)
 	UpdateTask(title, description string, completed bool, taskID string) error
 	ListEpics() ([]JiraIssue, error)
+	ListTasksForEpic(epicID string) ([]JiraIssue, error)
 	DescribeEpic(epicID string) (*JiraIssue, error)
 	DescribeTask(taskID string) (*JiraIssue, error)
 }
@@ -250,6 +251,20 @@ func (j *jira) ListEpics() ([]JiraIssue, error) {
 		return nil, err
 	}
 	return epics.Issues, nil
+}
+
+func (j *jira) ListTasksForEpic(epicID string) ([]JiraIssue, error) {
+	url := fmt.Sprintf("/rest/api/2/search?jql=project=%s+AND+parent=%s", j.projectKey, epicID)
+	b, err := j.client.MakeRequest("GET", url, nil)
+	if err != nil {
+		return nil, err
+	}
+	tasks := JiraIssueResult{}
+	err = json.Unmarshal(b, &tasks)
+	if err != nil {
+		return nil, err
+	}
+	return tasks.Issues, nil
 }
 
 func (j *jira) DescribeEpic(epicID string) (*JiraIssue, error) {

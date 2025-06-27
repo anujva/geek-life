@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"strings"
 	"unicode"
 
@@ -12,6 +11,7 @@ import (
 	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
+	"github.com/ajaxray/geek-life/util"
 )
 
 // ProjectPane Displays projects and dynamic lists
@@ -24,22 +24,29 @@ type ProjectPane struct {
 	activeProject       *model.Project
 	projectListStarting int // The index in list where project names starts
 	jira                jira.Jira
+	jiraConfig          util.JiraConfig
 }
 
 // NewProjectPane initializes
 func NewProjectPane(repo repository.ProjectRepository) *ProjectPane {
+	jiraConfig := util.GetJiraConfig()
+
 	pane := ProjectPane{
 		Flex:       tview.NewFlex().SetDirection(tview.FlexRow),
 		list:       tview.NewList().ShowSecondaryText(false),
 		newProject: makeLightTextInput("+[New Project]"),
 		repo:       repo,
-		jira: jira.NewJiraClient(
-			"https://thumbtack.atlassian.net",
-			"anujvarma@thumbtack.com",
-			os.Getenv("JIRA_API_TOKEN"),
-			"",
-			"DX",
-		),
+		jiraConfig: jiraConfig,
+	}
+
+	if jiraConfig.IsConfigured() {
+		pane.jira = jira.NewJiraClient(
+			jiraConfig.URL,
+			jiraConfig.Username,
+			jiraConfig.APIToken,
+			jiraConfig.APIToken,
+			jiraConfig.ProjectKey,
+		)
 	}
 
 	pane.newProject.SetDoneFunc(func(key tcell.Key) {
@@ -139,17 +146,25 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 		// Get the project that is currently selected
 		selectedIndex := pane.list.GetCurrentItem()
 		projectindex := selectedIndex - pane.projectListStarting
-		project := pane.projects[projectindex]
-		if project.Jira == "" {
-			p, err := pane.jira.CreateEpic(project.Title, project.Title)
-			if err != nil {
-				fmt.Fprintf(file, "%+v", err)
+		if projectindex >= 0 && projectindex < len(pane.projects) && pane.jira != nil {
+			project := pane.projects[projectindex]
+			if project.Jira == "" {
+				p, err := pane.jira.CreateEpic(project.Title, project.Title)
+				if err != nil {
+					statusBar.showForSeconds("[red]Failed to create JIRA epic: "+err.Error(), 5)
+					return nil
+				}
+				project.Jira = p
+				_ = pane.repo.Update(&project)
+				statusBar.showForSeconds("[lime]Created JIRA epic: "+p, 5)
 			}
-			project.Jira = p
-			_ = pane.repo.Update(&project)
+			pane.loadListItems(true)
+			pane.list.SetCurrentItem(selectedIndex)
 		}
-		pane.loadListItems(true)
-		pane.list.SetCurrentItem(selectedIndex)
+		return nil
+	case tcell.KeyCtrlI:
+		// Import epics from JIRA
+		pane.importEpicsFromJira()
 		return nil
 	}
 
@@ -196,4 +211,100 @@ func (pane *ProjectPane) loadListItems(focus bool) {
 // GetActiveProject provides pointer to currently active project
 func (pane *ProjectPane) GetActiveProject() *model.Project {
 	return pane.activeProject
+}
+
+// importEpicsFromJira imports all epics from JIRA as projects
+func (pane *ProjectPane) importEpicsFromJira() {
+	if pane.jira == nil {
+		statusBar.showForSeconds(
+			"[red]JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+			8,
+		)
+		return
+	}
+
+	epics, err := pane.jira.ListEpics()
+	if err != nil {
+		statusBar.showForSeconds("[red]Failed to fetch epics from JIRA: "+err.Error(), 5)
+		return
+	}
+
+	imported := 0
+	for _, epic := range epics {
+		// Check if project already exists with this JIRA ID
+		existingProject := pane.findProjectByJiraID(epic.Key)
+		if existingProject != nil {
+			continue
+		}
+
+		// Create new project from epic
+		project, err := pane.repo.Create(epic.Fields.Summary, epic.Key)
+		if err != nil {
+			continue
+		}
+
+		// Import tasks for this epic
+		pane.importTasksForEpic(project, epic.Key)
+
+		imported++
+	}
+
+	if imported > 0 {
+		statusBar.showForSeconds(fmt.Sprintf("[lime]Imported %d epics from JIRA", imported), 5)
+		pane.loadListItems(true)
+	} else {
+		statusBar.showForSeconds("[yellow]No new epics to import", 3)
+	}
+}
+
+// importTasksForEpic imports tasks for a specific epic
+func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey string) {
+	tasks, err := pane.jira.ListTasksForEpic(epicKey)
+	if err != nil {
+		return
+	}
+
+	for _, task := range tasks {
+		// Check if task already exists
+		existing, err := taskRepo.GetByJiraID(task.Key)
+		if err == nil && existing != nil {
+			continue
+		}
+
+		// Create task
+		newTask := model.Task{
+			ProjectID: project.ID,
+			Title:     task.Fields.Summary,
+			Details:   getTaskDescription(task),
+			Completed: isTaskCompleted(task),
+			JiraID:    task.Key,
+		}
+
+		_ = taskRepo.CreateTask(&newTask)
+	}
+}
+
+// findProjectByJiraID finds a project by its JIRA ID
+func (pane *ProjectPane) findProjectByJiraID(jiraID string) *model.Project {
+	for i := range pane.projects {
+		if pane.projects[i].Jira == jiraID {
+			return &pane.projects[i]
+		}
+	}
+	return nil
+}
+
+// getTaskDescription extracts description from JIRA task
+func getTaskDescription(task jira.JiraIssue) string {
+	if task.Fields.Description != nil {
+		if desc, ok := task.Fields.Description.(string); ok {
+			return desc
+		}
+	}
+	return ""
+}
+
+// isTaskCompleted checks if JIRA task is completed
+func isTaskCompleted(task jira.JiraIssue) bool {
+	return task.Fields.Status.StatusCategory.Key == "done"
 }

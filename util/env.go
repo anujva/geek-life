@@ -33,3 +33,26 @@ func GetEnvStr(key, defaultVal string) string {
 
 	return defaultVal
 }
+
+// JiraConfig holds JIRA configuration
+type JiraConfig struct {
+	URL        string
+	Username   string
+	APIToken   string
+	ProjectKey string
+}
+
+// GetJiraConfig returns JIRA configuration from environment variables
+func GetJiraConfig() JiraConfig {
+	return JiraConfig{
+		URL:        GetEnvStr("JIRA_URL", ""),
+		Username:   GetEnvStr("JIRA_USERNAME", ""),
+		APIToken:   GetEnvStr("JIRA_API_TOKEN", ""),
+		ProjectKey: GetEnvStr("JIRA_PROJECT_KEY", ""),
+	}
+}
+
+// IsJiraConfigured checks if JIRA is properly configured
+func (c JiraConfig) IsConfigured() bool {
+	return c.URL != "" && c.Username != "" && c.APIToken != "" && c.ProjectKey != ""
+}

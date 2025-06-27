@@ -14,7 +14,9 @@ type TaskRepository interface {
 	GetAllByDateRange(from, to time.Time) ([]model.Task, error)
 	GetByID(ID string) (model.Task, error)
 	GetByUUID(UUID string) (model.Task, error)
+	GetByJiraID(jiraID string) (*model.Task, error)
 	Create(project model.Project, title, details, UUID string, dueDate int64) (model.Task, error)
+	CreateTask(task *model.Task) error
 	Update(t *model.Task) error
 	UpdateField(t *model.Task, field string, value interface{}) error
 	Delete(t *model.Task) error
