@@ -3,6 +3,7 @@ package api
 import (
 	"bytes"
 	"encoding/base64"
+	"fmt"
 	"io"
 	"net/http"
 )
@@ -41,12 +42,14 @@ func (c *Client) MakeRequest(method, url string, payload []byte) ([]byte, error)
 	}
 
 	// Encode credentials
-	auth := base64.StdEncoding.EncodeToString([]byte(c.Username + ":" + c.Password))
+	// For JIRA API tokens, use Basic auth with username:token
+	var auth string
 	if c.APIToken != "" {
-		req.Header.Add("Authorization", "Bearer "+c.APIToken)
+		auth = base64.StdEncoding.EncodeToString([]byte(c.Username + ":" + c.APIToken))
 	} else {
-		req.Header.Add("Authorization", "Basic "+auth)
+		auth = base64.StdEncoding.EncodeToString([]byte(c.Username + ":" + c.Password))
 	}
+	req.Header.Add("Authorization", "Basic "+auth)
 
 	if method == "POST" || method == "PUT" {
 		req.Header.Add("Content-Type", "application/json")
@@ -62,6 +65,11 @@ func (c *Client) MakeRequest(method, url string, payload []byte) ([]byte, error)
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, err
+	}
+
+	// Log response for debugging
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
 	}
 
 	return body, nil

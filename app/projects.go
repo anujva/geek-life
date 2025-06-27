@@ -166,6 +166,10 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 		// Import epics from JIRA
 		pane.importEpicsFromJira()
 		return nil
+	case tcell.KeyCtrlR:
+		// Clean up duplicate projects and re-link existing ones
+		pane.cleanupAndRelinkProjects()
+		return nil
 	}
 
 	return event
@@ -223,13 +227,22 @@ func (pane *ProjectPane) importEpicsFromJira() {
 		return
 	}
 
-	epics, err := pane.jira.ListEpics()
+	// Reload projects to ensure we have the latest data
+	var err error
+	pane.projects, err = pane.repo.GetAll()
+	if err != nil {
+		statusBar.showForSeconds("[red]Failed to load projects: "+err.Error(), 5)
+		return
+	}
+
+	epics, err := pane.jira.ListGeekLifeEpics()
 	if err != nil {
 		statusBar.showForSeconds("[red]Failed to fetch epics from JIRA: "+err.Error(), 5)
 		return
 	}
 
 	imported := 0
+	updated := 0
 	for _, epic := range epics {
 		// Check if project already exists with this JIRA ID
 		existingProject := pane.findProjectByJiraID(epic.Key)
@@ -237,11 +250,35 @@ func (pane *ProjectPane) importEpicsFromJira() {
 			continue
 		}
 
-		// Create new project from epic
-		project, err := pane.repo.Create(epic.Fields.Summary, epic.Key)
+		// Check if there's a project with the same title but no JIRA ID
+		existingProjectByTitle := pane.findProjectByTitle(epic.Fields.Summary)
+		if existingProjectByTitle != nil && existingProjectByTitle.Jira == "" {
+			// Update existing project with JIRA ID
+			existingProjectByTitle.Jira = epic.Key
+			err := pane.repo.Update(existingProjectByTitle)
+			if err == nil {
+				// Update the in-memory project list
+				for i := range pane.projects {
+					if pane.projects[i].ID == existingProjectByTitle.ID {
+						pane.projects[i].Jira = epic.Key
+						break
+					}
+				}
+				// Import tasks for this epic using the updated project
+				pane.importTasksForEpic(*existingProjectByTitle, epic.Key)
+				updated++
+			}
+			continue
+		}
+
+		// Create new project from epic with JIRA ID
+		project, err := pane.repo.CreateWithJira(epic.Fields.Summary, epic.Key)
 		if err != nil {
 			continue
 		}
+
+		// Add to in-memory projects list  
+		pane.projects = append(pane.projects, project)
 
 		// Import tasks for this epic
 		pane.importTasksForEpic(project, epic.Key)
@@ -249,11 +286,19 @@ func (pane *ProjectPane) importEpicsFromJira() {
 		imported++
 	}
 
-	if imported > 0 {
-		statusBar.showForSeconds(fmt.Sprintf("[lime]Imported %d epics from JIRA", imported), 5)
+	if imported > 0 || updated > 0 {
+		message := ""
+		if imported > 0 && updated > 0 {
+			message = fmt.Sprintf("[lime]Imported %d new epics and updated %d existing projects with JIRA IDs", imported, updated)
+		} else if imported > 0 {
+			message = fmt.Sprintf("[lime]Imported %d user-created epics from JIRA", imported)
+		} else {
+			message = fmt.Sprintf("[lime]Updated %d existing projects with JIRA IDs", updated)
+		}
+		statusBar.showForSeconds(message, 5)
 		pane.loadListItems(true)
 	} else {
-		statusBar.showForSeconds("[yellow]No new epics to import", 3)
+		statusBar.showForSeconds("[yellow]No new user-created epics to import", 3)
 	}
 }
 
@@ -294,6 +339,16 @@ func (pane *ProjectPane) findProjectByJiraID(jiraID string) *model.Project {
 	return nil
 }
 
+// findProjectByTitle finds a project by its title
+func (pane *ProjectPane) findProjectByTitle(title string) *model.Project {
+	for i := range pane.projects {
+		if pane.projects[i].Title == title {
+			return &pane.projects[i]
+		}
+	}
+	return nil
+}
+
 // getTaskDescription extracts description from JIRA task
 func getTaskDescription(task jira.JiraIssue) string {
 	if task.Fields.Description != nil {
@@ -307,4 +362,80 @@ func getTaskDescription(task jira.JiraIssue) string {
 // isTaskCompleted checks if JIRA task is completed
 func isTaskCompleted(task jira.JiraIssue) bool {
 	return task.Fields.Status.StatusCategory.Key == "done"
+}
+
+// cleanupAndRelinkProjects removes duplicate projects and links existing projects to JIRA
+func (pane *ProjectPane) cleanupAndRelinkProjects() {
+	if pane.jira == nil {
+		statusBar.showForSeconds(
+			"[red]JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+			8,
+		)
+		return
+	}
+
+	// Reload projects to ensure we have the latest data
+	var err error
+	pane.projects, err = pane.repo.GetAll()
+	if err != nil {
+		statusBar.showForSeconds("[red]Failed to load projects: "+err.Error(), 5)
+		return
+	}
+
+	epics, err := pane.jira.ListGeekLifeEpics()
+	if err != nil {
+		statusBar.showForSeconds("[red]Failed to fetch epics from JIRA: "+err.Error(), 5)
+		return
+	}
+
+	linkedCount := 0
+	removedCount := 0
+
+	for _, epic := range epics {
+		// Find all projects with this epic title
+		var projectsWithTitle []*model.Project
+		var projectWithJira *model.Project
+
+		for i := range pane.projects {
+			if pane.projects[i].Title == epic.Fields.Summary {
+				if pane.projects[i].Jira == epic.Key {
+					projectWithJira = &pane.projects[i]
+				} else if pane.projects[i].Jira == "" {
+					projectsWithTitle = append(projectsWithTitle, &pane.projects[i])
+				}
+			}
+		}
+
+		// If we have a project with JIRA ID and projects without, merge them
+		if projectWithJira != nil && len(projectsWithTitle) > 0 {
+			for _, oldProject := range projectsWithTitle {
+				// Move tasks from old project to the JIRA-linked project
+				tasks, err := taskRepo.GetAllByProject(*oldProject)
+				if err == nil {
+					for _, task := range tasks {
+						task.ProjectID = projectWithJira.ID
+						_ = taskRepo.Update(&task)
+					}
+				}
+				// Remove the old project
+				_ = pane.repo.Delete(oldProject)
+				removedCount++
+			}
+		} else if len(projectsWithTitle) == 1 && projectWithJira == nil {
+			// Link the existing project to JIRA
+			projectsWithTitle[0].Jira = epic.Key
+			err := pane.repo.Update(projectsWithTitle[0])
+			if err == nil {
+				// Import tasks for this epic
+				pane.importTasksForEpic(*projectsWithTitle[0], epic.Key)
+				linkedCount++
+			}
+		}
+	}
+
+	statusBar.showForSeconds(
+		fmt.Sprintf("[lime]Linked %d projects to JIRA, removed %d duplicates", linkedCount, removedCount),
+		5,
+	)
+	pane.loadListItems(true)
 }

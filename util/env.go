@@ -1,6 +1,7 @@
 package util
 
 import (
+	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -44,12 +45,28 @@ type JiraConfig struct {
 
 // GetJiraConfig returns JIRA configuration from environment variables
 func GetJiraConfig() JiraConfig {
-	return JiraConfig{
+	config := JiraConfig{
 		URL:        GetEnvStr("JIRA_URL", ""),
 		Username:   GetEnvStr("JIRA_USERNAME", ""),
 		APIToken:   GetEnvStr("JIRA_API_TOKEN", ""),
 		ProjectKey: GetEnvStr("JIRA_PROJECT_KEY", ""),
 	}
+
+	// Debug logging to see what config is loaded
+	fmt.Printf("JIRA Config loaded:\n")
+	fmt.Printf("  URL: %s\n", config.URL)
+	fmt.Printf("  Username: %s\n", config.Username)
+	fmt.Printf("  ProjectKey: %s\n", config.ProjectKey)
+	fmt.Printf("  APIToken: %s\n", maskToken(config.APIToken))
+
+	return config
+}
+
+func maskToken(token string) string {
+	if len(token) <= 8 {
+		return "***"
+	}
+	return token[:4] + "***" + token[len(token)-4:]
 }
 
 // IsJiraConfigured checks if JIRA is properly configured

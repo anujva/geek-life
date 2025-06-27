@@ -3,7 +3,9 @@ package jira
 import (
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
+	"strings"
 
 	"github.com/ajaxray/geek-life/api"
 )
@@ -24,6 +26,7 @@ type Jira interface {
 	CreateTask(title, description string, epicID string) (string, error)
 	UpdateTask(title, description string, completed bool, taskID string) error
 	ListEpics() ([]JiraIssue, error)
+	ListGeekLifeEpics() ([]JiraIssue, error)
 	ListTasksForEpic(epicID string) ([]JiraIssue, error)
 	DescribeEpic(epicID string) (*JiraIssue, error)
 	DescribeTask(taskID string) (*JiraIssue, error)
@@ -37,27 +40,36 @@ func NewJiraClient(url, username, password, token, projectKey string) Jira {
 	}
 	j.client = *api.NewClient(url, username, password, token)
 	j.config = make(map[string]string)
-	j.UpdateConfig()
+	// Don't call UpdateConfig() here to avoid auth errors on initialization
+	// It will be called lazily when needed
 	return &j
 }
 
 type jira struct {
-	username   string
-	password   string
-	client     api.Client
-	projectKey string
-	config     map[string]string
+	username     string
+	password     string
+	client       api.Client
+	projectKey   string
+	config       map[string]string
+	configLoaded bool
 }
 
-func (j *jira) UpdateConfig() {
+func (j *jira) ensureConfigLoaded() error {
+	if j.configLoaded {
+		return nil
+	}
+	return j.UpdateConfig()
+}
+
+func (j *jira) UpdateConfig() error {
 	b, err := j.client.MakeRequest(
 		"GET",
 		"/rest/api/2/field",
 		nil,
 	)
 	if err != nil {
-		fmt.Println("error making request", err)
-		os.Exit(12)
+		fmt.Fprintf(file, "error making request: %v\n", err)
+		return err
 	}
 
 	fmt.Fprintf(file, "%s", string(b))
@@ -65,7 +77,7 @@ func (j *jira) UpdateConfig() {
 	err = json.Unmarshal(b, &v)
 	if err != nil {
 		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
-		return
+		return err
 	}
 
 	for _, field := range v {
@@ -76,10 +88,13 @@ func (j *jira) UpdateConfig() {
 			j.config["epicLink"] = field.ID
 		}
 	}
+
+	j.configLoaded = true
+	return nil
 }
 
 func (j *jira) CreateEpic(title, description string) (string, error) {
-	// Construct the request payload
+	// Try simple epic creation first, fall back to complex config if needed
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
 			"project": map[string]string{
@@ -90,7 +105,8 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 			"issuetype": map[string]string{
 				"name": "Epic",
 			},
-			j.config["epicName"]: title,
+			// Try common epic name fields
+			"customfield_10011": title, // Common epic name field
 		},
 	}
 
@@ -147,7 +163,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 }
 
 func (j *jira) CreateTask(title, description string, epicID string) (string, error) {
-	// Construct the request payload
+	// Try simple task creation first
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
 			"project": map[string]string{
@@ -158,7 +174,8 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 			"issuetype": map[string]string{
 				"name": "Task",
 			},
-			j.config["epicLink"]: map[string]string{
+			// Try common epic link fields
+			"parent": map[string]string{
 				"key": epicID,
 			},
 		},
@@ -240,8 +257,10 @@ func (j *jira) UpdateTask(
 }
 
 func (j *jira) ListEpics() ([]JiraIssue, error) {
-	url := fmt.Sprintf("/rest/api/2/search?jql=project=%s+AND+issuetype=Epic", j.projectKey)
-	b, err := j.client.MakeRequest("GET", url, nil)
+	jql := fmt.Sprintf("project=%s AND issuetype=Epic", j.projectKey)
+	encodedJQL := url.QueryEscape(jql)
+	requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
+	b, err := j.client.MakeRequest("GET", requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -253,9 +272,93 @@ func (j *jira) ListEpics() ([]JiraIssue, error) {
 	return epics.Issues, nil
 }
 
+func (j *jira) ListGeekLifeEpics() ([]JiraIssue, error) {
+	// Use JQL to filter epics created by the current user
+	// Try multiple formats for username matching
+	queries := []string{
+		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=\"%s\"", j.projectKey, j.username),
+		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=%s", j.projectKey, j.username),
+		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=currentUser()", j.projectKey),
+	}
+
+	fmt.Fprintf(
+		file,
+		"Trying to find epics for user: %s in project: %s\n",
+		j.username,
+		j.projectKey,
+	)
+
+	for i, jql := range queries {
+		// Properly URL encode the JQL query
+		encodedJQL := url.QueryEscape(jql)
+		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
+		fmt.Fprintf(file, "Attempt %d - JQL: %s\n", i+1, jql)
+		fmt.Fprintf(file, "Attempt %d - Encoded URL: %s\n", i+1, requestURL)
+
+		b, err := j.client.MakeRequest("GET", requestURL, nil)
+		if err != nil {
+			fmt.Fprintf(file, "Error with query %d: %v\n", i+1, err)
+			continue
+		}
+
+		epics := JiraIssueResult{}
+		err = json.Unmarshal(b, &epics)
+		if err != nil {
+			fmt.Fprintf(file, "Error unmarshaling response for query %d: %v\n", i+1, err)
+			continue
+		}
+
+		fmt.Fprintf(file, "Query %d returned %d epics\n", i+1, len(epics.Issues))
+		if len(epics.Issues) > 0 {
+			// Log the first epic's creator info for debugging
+			if len(epics.Issues) > 0 {
+				fmt.Fprintf(file, "First epic creator: %s (email: %s)\n",
+					epics.Issues[0].Fields.Creator.DisplayName,
+					epics.Issues[0].Fields.Creator.EmailAddress)
+			}
+			return epics.Issues, nil
+		}
+	}
+
+	// If no queries returned results, fall back to getting all epics and filter manually
+	fmt.Fprintf(file, "No filtered results, falling back to manual filtering\n")
+	return j.filterEpicsByUser()
+}
+
+func (j *jira) filterEpicsByUser() ([]JiraIssue, error) {
+	// Get all epics first
+	allEpics, err := j.ListEpics()
+	if err != nil {
+		return nil, err
+	}
+
+	fmt.Fprintf(file, "Got %d total epics, filtering for user: %s\n", len(allEpics), j.username)
+
+	var userEpics []JiraIssue
+	for _, epic := range allEpics {
+		fmt.Fprintf(file, "Epic: %s, Creator email: %s, Creator name: %s\n",
+			epic.Fields.Summary,
+			epic.Fields.Creator.EmailAddress,
+			epic.Fields.Creator.DisplayName)
+
+		// Try multiple matching criteria
+		if epic.Fields.Creator.EmailAddress == j.username ||
+			epic.Fields.Creator.DisplayName == j.username ||
+			strings.ToLower(epic.Fields.Creator.EmailAddress) == strings.ToLower(j.username) {
+			userEpics = append(userEpics, epic)
+			fmt.Fprintf(file, "Matched epic: %s\n", epic.Fields.Summary)
+		}
+	}
+
+	fmt.Fprintf(file, "Found %d user epics\n", len(userEpics))
+	return userEpics, nil
+}
+
 func (j *jira) ListTasksForEpic(epicID string) ([]JiraIssue, error) {
-	url := fmt.Sprintf("/rest/api/2/search?jql=project=%s+AND+parent=%s", j.projectKey, epicID)
-	b, err := j.client.MakeRequest("GET", url, nil)
+	jql := fmt.Sprintf("project=%s AND parent=%s", j.projectKey, epicID)
+	encodedJQL := url.QueryEscape(jql)
+	requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
+	b, err := j.client.MakeRequest("GET", requestURL, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -294,21 +397,3 @@ func (j *jira) DescribeTask(taskID string) (*JiraIssue, error) {
 	}
 	return jiraissue, nil
 }
-
-/*
-func main() {
-	j := jira{
-		username:   "anujva@gmail.com",
-		password:   os.Getenv("JIRA_API_TOKEN"),
-		projectKey: "SRE",
-	}
-	url := "http://localhost:8080"
-	j.client = *api.NewClient(url, j.username, j.password, j.password)
-
-	t, err := j.CreateTask("This is an EPIC", "Do something something", "SRE-1")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println(t)
-}
-*/

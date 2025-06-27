@@ -9,6 +9,7 @@ type ProjectRepository interface {
 	GetByTitle(title string) (model.Project, error)
 	GetByUUID(UUID string) (model.Project, error)
 	Create(title, UUID string) (model.Project, error)
+	CreateWithJira(title, jiraID string) (model.Project, error)
 	Update(p *model.Project) error
 	UpdateField(p *model.Project, field string, value interface{}) error
 	Delete(p *model.Project) error

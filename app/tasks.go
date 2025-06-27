@@ -14,6 +14,7 @@ import (
 	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
+	"github.com/ajaxray/geek-life/util"
 )
 
 var (
@@ -51,6 +52,7 @@ type TaskPane struct {
 	taskRepo    repository.TaskRepository
 	hint        *tview.TextView
 	jira        jira.Jira
+	jiraConfig  util.JiraConfig
 }
 
 // NewTaskPane initializes and configures a TaskPane
@@ -58,6 +60,8 @@ func NewTaskPane(
 	projectRepo repository.ProjectRepository,
 	taskRepo repository.TaskRepository,
 ) *TaskPane {
+	jiraConfig := util.GetJiraConfig()
+
 	pane := TaskPane{
 		Flex:        tview.NewFlex().SetDirection(tview.FlexRow),
 		list:        tview.NewList().ShowSecondaryText(false),
@@ -67,13 +71,17 @@ func NewTaskPane(
 		hint: tview.NewTextView().
 			SetTextColor(tcell.ColorYellow).
 			SetTextAlign(tview.AlignCenter),
-		jira: jira.NewJiraClient(
-			"https://thumbtack.atlassian.net",
-			"anujvarma@thumbtack.com",
-			os.Getenv("JIRA_API_TOKEN"),
-			"",
-			"DX",
-		),
+		jiraConfig: jiraConfig,
+	}
+
+	if jiraConfig.IsConfigured() {
+		pane.jira = jira.NewJiraClient(
+			jiraConfig.URL,
+			jiraConfig.Username,
+			jiraConfig.APIToken,
+			jiraConfig.APIToken,
+			jiraConfig.ProjectKey,
+		)
 	}
 
 	pane.list.SetSelectedBackgroundColor(tcell.ColorDarkBlue)
@@ -158,34 +166,60 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 
 	switch event.Key() {
 	case tcell.KeyCtrlJ:
+		// Check if JIRA is configured
+		if pane.jira == nil {
+			statusBar.showForSeconds(
+				"[red]JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+				8,
+			)
+			return nil
+		}
+
 		// Get the project that is currently selected
 		selectedIndex := pane.list.GetCurrentItem()
+		if selectedIndex < 0 || selectedIndex >= len(pane.tasks) {
+			return nil
+		}
+
 		task := pane.tasks[selectedIndex]
-		fmt.Fprintf(file, "Task: %+v\n", task)
 		if task.JiraID == "" {
 			project, err := pane.projectRepo.GetByID(task.ProjectID)
 			if err != nil {
-				fmt.Fprintf(file, "%+v\n", err)
-			}
-			fmt.Fprintf(file, "Epic ID: %s\n", project.Jira)
-			issue, err := pane.jira.DescribeEpic(project.Jira)
-			if err != nil {
-				fmt.Fprintf(file, "%+v\n", err)
+				statusBar.showForSeconds("[red]Failed to get project: "+err.Error(), 5)
 				return nil
 			}
-			fmt.Fprintf(file, "Epic Link: %+v\n", issue.Key)
+
+			if project.Jira == "" {
+				statusBar.showForSeconds(
+					"[red]Project has no JIRA epic. Create epic first (Ctrl+J in Projects pane).",
+					5,
+				)
+				return nil
+			}
+
+			issue, err := pane.jira.DescribeEpic(project.Jira)
+			if err != nil {
+				statusBar.showForSeconds("[red]Failed to get epic details: "+err.Error(), 5)
+				return nil
+			}
+
 			t, err := pane.jira.CreateTask(
 				task.Title,
 				task.Details,
 				issue.Key,
 			)
 			if err != nil {
-				fmt.Fprintf(file, "%+v\n", err)
+				statusBar.showForSeconds("[red]Failed to create JIRA task: "+err.Error(), 5)
+				return nil
 			}
+
 			task.JiraID = t
 			_ = pane.taskRepo.Update(&task)
 			pane.LoadProjectTasks(project)
 			pane.list.SetCurrentItem(selectedIndex)
+			statusBar.showForSeconds("[lime]JIRA task created: "+t, 5)
+		} else {
+			statusBar.showForSeconds("[yellow]Task already has JIRA ID: "+task.JiraID, 3)
 		}
 		return nil
 	}

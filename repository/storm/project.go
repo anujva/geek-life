@@ -45,6 +45,16 @@ func (repo *projectRepository) Create(title, UUID string) (model.Project, error)
 	return project, err
 }
 
+func (repo *projectRepository) CreateWithJira(title, jiraID string) (model.Project, error) {
+	project := model.Project{
+		Title: title,
+		Jira:  jiraID,
+	}
+
+	err := repo.DB.Save(&project)
+	return project, err
+}
+
 func (repo *projectRepository) Update(project *model.Project) error {
 	return repo.DB.Save(project)
 }

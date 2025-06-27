@@ -68,10 +68,11 @@ Set these environment variables to enable JIRA integration:
 - `JIRA_PROJECT_KEY` - The JIRA project key to work with
 
 #### Features
-- **Import Epics**: Press `Ctrl+I` in the Projects pane to import all epics from JIRA as projects
+- **Import User Epics**: Press `Ctrl+I` in the Projects pane to import epics created by the current JIRA user as projects
 - **Create Epic**: Press `Ctrl+J` on a selected project to create a corresponding epic in JIRA
 - **Task Sync**: When marking tasks as complete/incomplete, changes are automatically synced to JIRA if the task has a JIRA ID
 - **Epic-Task Mapping**: Projects correspond to JIRA epics, tasks correspond to JIRA tasks under those epics
+- **User Filtering**: Only imports epics where the creator matches the configured JIRA_USERNAME
 
 ### Development Notes
 - Go 1.19+ required
