@@ -1,7 +1,6 @@
 package util
 
 import (
-	"fmt"
 	"log"
 	"os"
 	"strconv"
@@ -52,12 +51,6 @@ func GetJiraConfig() JiraConfig {
 		ProjectKey: GetEnvStr("JIRA_PROJECT_KEY", ""),
 	}
 
-	// Debug logging to see what config is loaded
-	fmt.Printf("JIRA Config loaded:\n")
-	fmt.Printf("  URL: %s\n", config.URL)
-	fmt.Printf("  Username: %s\n", config.Username)
-	fmt.Printf("  ProjectKey: %s\n", config.ProjectKey)
-	fmt.Printf("  APIToken: %s\n", maskToken(config.APIToken))
 
 	return config
 }

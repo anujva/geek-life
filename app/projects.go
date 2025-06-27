@@ -165,6 +165,27 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 	}
 
 	switch event.Key() {
+	case tcell.KeyCtrlB:
+		// Open JIRA epic in browser
+		selectedIndex := pane.list.GetCurrentItem()
+		projectindex := selectedIndex - pane.projectListStarting
+		if projectindex >= 0 && projectindex < len(pane.projects) {
+			project := pane.projects[projectindex]
+			if project.Jira != "" && pane.jiraConfig.IsConfigured() {
+				jiraURL := fmt.Sprintf("%s/browse/%s", pane.jiraConfig.URL, project.Jira)
+				err := util.OpenInBrowser(jiraURL)
+				if err != nil {
+					statusBar.showForSeconds("[red]Failed to open browser: "+err.Error(), 5)
+				} else {
+					statusBar.showForSeconds("[lime]Opened JIRA epic in browser", 3)
+				}
+			} else if project.Jira == "" {
+				statusBar.showForSeconds("[yellow]Project has no JIRA epic associated", 3)
+			} else {
+				statusBar.showForSeconds("[yellow]JIRA not configured", 3)
+			}
+		}
+		return nil
 	case tcell.KeyCtrlJ:
 		// Get the project that is currently selected
 		selectedIndex := pane.list.GetCurrentItem()

@@ -36,7 +36,7 @@ func prepareStatusBar(app *tview.Application) *StatusBar {
 					SetColumns(0, 0, 0).
 					SetRows(0).
 					AddItem(tview.NewTextView().SetText("Navigate: ↓,↑/j,k | New: n"), 0, 0, 1, 1, 0, 0, false).
-					AddItem(tview.NewTextView().SetText("JIRA: Ctrl+I (import) | Ctrl+J (create) | Ctrl+R (cleanup)").SetTextAlign(tview.AlignCenter), 0, 1, 1, 1, 0, 0, false).
+					AddItem(tview.NewTextView().SetText("JIRA: Ctrl+I (import) | Ctrl+J (create) | Ctrl+B (browse) | Ctrl+R (cleanup)").SetTextAlign(tview.AlignCenter), 0, 1, 1, 1, 0, 0, false).
 					AddItem(tview.NewTextView().SetText("Back: Esc | Quit: Ctrl+C").SetTextAlign(tview.AlignRight), 0, 2, 1, 1, 0, 0, false),
 		true,
 		true,

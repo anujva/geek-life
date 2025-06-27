@@ -187,6 +187,28 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 	}
 
 	switch event.Key() {
+	case tcell.KeyCtrlB:
+		// Open JIRA task in browser
+		selectedIndex := pane.list.GetCurrentItem()
+		if selectedIndex < 0 || selectedIndex >= len(pane.tasks) {
+			return nil
+		}
+
+		task := pane.tasks[selectedIndex]
+		if task.JiraID != "" && pane.jiraConfig.IsConfigured() {
+			jiraURL := fmt.Sprintf("%s/browse/%s", pane.jiraConfig.URL, task.JiraID)
+			err := util.OpenInBrowser(jiraURL)
+			if err != nil {
+				statusBar.showForSeconds("[red]Failed to open browser: "+err.Error(), 5)
+			} else {
+				statusBar.showForSeconds("[lime]Opened JIRA task in browser", 3)
+			}
+		} else if task.JiraID == "" {
+			statusBar.showForSeconds("[yellow]Task has no JIRA task associated", 3)
+		} else {
+			statusBar.showForSeconds("[yellow]JIRA not configured", 3)
+		}
+		return nil
 	case tcell.KeyCtrlJ:
 		// Check if JIRA is configured
 		if pane.jira == nil {
