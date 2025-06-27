@@ -47,12 +47,13 @@ type TaskPane struct {
 	tasks      []model.Task
 	activeTask *model.Task
 
-	newTask     *tview.InputField
-	projectRepo repository.ProjectRepository
-	taskRepo    repository.TaskRepository
-	hint        *tview.TextView
-	jira        jira.Jira
-	jiraConfig  util.JiraConfig
+	newTask      *tview.InputField
+	projectRepo  repository.ProjectRepository
+	taskRepo     repository.TaskRepository
+	hint         *tview.TextView
+	jira         jira.Jira
+	jiraConfig   util.JiraConfig
+	lastGKeyTime int64 // Timestamp for tracking double 'g' press
 }
 
 // NewTaskPane initializes and configures a TaskPane
@@ -149,6 +150,16 @@ func (pane *TaskPane) addTaskToList(i int) *tview.List {
 }
 
 func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
+	// Handle Shift+G (uppercase G) BEFORE the lowercase conversion
+	if event.Rune() == 'G' {
+		// Go to bottom
+		itemCount := pane.list.GetItemCount()
+		if itemCount > 0 {
+			pane.list.SetCurrentItem(itemCount - 1)
+		}
+		return nil
+	}
+
 	switch unicode.ToLower(event.Rune()) {
 	case 'j':
 		pane.list.SetCurrentItem(pane.list.GetCurrentItem() + 1)
@@ -161,6 +172,17 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 		return nil
 	case 'n':
 		app.SetFocus(pane.newTask)
+		return nil
+	case 'g':
+		now := time.Now().UnixMilli()
+		if now-pane.lastGKeyTime < 500 { // 500ms window for double press
+			// Double 'g' pressed - go to top
+			pane.list.SetCurrentItem(0)
+			pane.lastGKeyTime = 0 // Reset
+		} else {
+			// Single 'g' pressed - store timestamp
+			pane.lastGKeyTime = now
+		}
 		return nil
 	}
 

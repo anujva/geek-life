@@ -91,6 +91,8 @@ func setKeyboardShortcuts() *tview.Application {
 			contents.RemoveItem(taskDetailPane)
 			return nil
 		case 'q':
+			app.Stop()
+			return nil
 		case 't':
 			app.SetFocus(taskPane)
 			contents.RemoveItem(taskDetailPane)
