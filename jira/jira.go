@@ -201,11 +201,67 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 	return task.Key, nil
 }
 
-func getIDFromCompleted(completed bool) string {
-	if completed {
-		return "41"
+func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
+	// Get available transitions for this task
+	url := fmt.Sprintf("/rest/api/2/issue/%s/transitions", taskID)
+	b, err := j.client.MakeRequest("GET", url, nil)
+	if err != nil {
+		return "", err
 	}
-	return "11"
+	
+	var transitions struct {
+		Transitions []struct {
+			ID   string `json:"id"`
+			Name string `json:"name"`
+			To   struct {
+				Name           string `json:"name"`
+				StatusCategory struct {
+					Key string `json:"key"`
+				} `json:"statusCategory"`
+			} `json:"to"`
+		} `json:"transitions"`
+	}
+	
+	err = json.Unmarshal(b, &transitions)
+	if err != nil {
+		return "", err
+	}
+	
+	fmt.Fprintf(file, "Available transitions for task %s:\n", taskID)
+	for _, transition := range transitions.Transitions {
+		fmt.Fprintf(file, "  ID: %s, Name: %s, To: %s, Category: %s\n", 
+			transition.ID, transition.Name, transition.To.Name, transition.To.StatusCategory.Key)
+	}
+	
+	// Look for appropriate transition based on completion status
+	targetCategory := "new"
+	if completed {
+		targetCategory = "done"
+	}
+	
+	for _, transition := range transitions.Transitions {
+		if transition.To.StatusCategory.Key == targetCategory {
+			fmt.Fprintf(file, "Selected transition ID %s for completed=%v\n", transition.ID, completed)
+			return transition.ID, nil
+		}
+	}
+	
+	// Fallback to common transition names
+	targetNames := []string{"To Do", "Open", "New"}
+	if completed {
+		targetNames = []string{"Done", "Closed", "Complete", "Resolved"}
+	}
+	
+	for _, targetName := range targetNames {
+		for _, transition := range transitions.Transitions {
+			if strings.Contains(strings.ToLower(transition.To.Name), strings.ToLower(targetName)) {
+				fmt.Fprintf(file, "Selected transition ID %s by name match for completed=%v\n", transition.ID, completed)
+				return transition.ID, nil
+			}
+		}
+	}
+	
+	return "", fmt.Errorf("no suitable transition found for completed=%v", completed)
 }
 
 func (j *jira) UpdateTask(
@@ -235,10 +291,17 @@ func (j *jira) UpdateTask(
 		return err
 	}
 	fmt.Fprintf(file, "B: %s\n", b)
+	// Get the correct transition ID for this task
+	transitionID, err := j.getTransitionID(taskID, completed)
+	if err != nil {
+		fmt.Fprintf(file, "Error getting transition ID: %v\n", err)
+		return err
+	}
+
 	// Construct the request payload
 	payload = map[string]interface{}{
 		"transition": map[string]interface{}{
-			"id": getIDFromCompleted(completed),
+			"id": transitionID,
 		},
 	}
 	payloadBytes, err = json.Marshal(payload)
@@ -355,19 +418,47 @@ func (j *jira) filterEpicsByUser() ([]JiraIssue, error) {
 }
 
 func (j *jira) ListTasksForEpic(epicID string) ([]JiraIssue, error) {
-	jql := fmt.Sprintf("project=%s AND parent=%s", j.projectKey, epicID)
-	encodedJQL := url.QueryEscape(jql)
-	requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
-	b, err := j.client.MakeRequest("GET", requestURL, nil)
-	if err != nil {
-		return nil, err
+	// Try multiple JQL queries for epic-task relationships
+	queries := []string{
+		fmt.Sprintf("project=%s AND parent=%s", j.projectKey, epicID),
+		fmt.Sprintf("project=%s AND \"Epic Link\"=%s", j.projectKey, epicID),
+		fmt.Sprintf("project=%s AND cf[10014]=%s", j.projectKey, epicID), // Common epic link field
+		fmt.Sprintf("project=%s AND cf[10011]=%s", j.projectKey, epicID), // Another common epic link field
 	}
-	tasks := JiraIssueResult{}
-	err = json.Unmarshal(b, &tasks)
-	if err != nil {
-		return nil, err
+	
+	fmt.Fprintf(file, "Looking for tasks under epic: %s\n", epicID)
+	
+	for i, jql := range queries {
+		encodedJQL := url.QueryEscape(jql)
+		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
+		fmt.Fprintf(file, "Task query %d - JQL: %s\n", i+1, jql)
+		fmt.Fprintf(file, "Task query %d - URL: %s\n", i+1, requestURL)
+		
+		b, err := j.client.MakeRequest("GET", requestURL, nil)
+		if err != nil {
+			fmt.Fprintf(file, "Error with task query %d: %v\n", i+1, err)
+			continue
+		}
+		
+		tasks := JiraIssueResult{}
+		err = json.Unmarshal(b, &tasks)
+		if err != nil {
+			fmt.Fprintf(file, "Error unmarshaling task response %d: %v\n", i+1, err)
+			continue
+		}
+		
+		fmt.Fprintf(file, "Task query %d returned %d tasks\n", i+1, len(tasks.Issues))
+		if len(tasks.Issues) > 0 {
+			// Log some task info for debugging
+			for _, task := range tasks.Issues {
+				fmt.Fprintf(file, "  Found task: %s - %s\n", task.Key, task.Fields.Summary)
+			}
+			return tasks.Issues, nil
+		}
 	}
-	return tasks.Issues, nil
+	
+	fmt.Fprintf(file, "No tasks found for epic %s with any query\n", epicID)
+	return []JiraIssue{}, nil
 }
 
 func (j *jira) DescribeEpic(epicID string) (*JiraIssue, error) {

@@ -214,6 +214,14 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 		// Clean up duplicate projects and re-link existing ones
 		pane.cleanupAndRelinkProjects()
 		return nil
+	case tcell.KeyCtrlT:
+		// Force refresh tasks for current project from JIRA
+		pane.forceRefreshTasks()
+		return nil
+	case tcell.KeyCtrlF:
+		// Fix orphaned tasks - relink tasks to current project
+		pane.fixOrphanedTasks()
+		return nil
 	}
 
 	return event
@@ -221,6 +229,17 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 
 func (pane *ProjectPane) activateProject(idx int) {
 	pane.activeProject = &pane.projects[idx]
+	
+	// If this project has a JIRA ID but no tasks, try to import them
+	if pane.activeProject.Jira != "" && pane.jira != nil {
+		existingTasks, err := taskRepo.GetAllByProject(*pane.activeProject)
+		if err == nil && len(existingTasks) == 0 {
+			// No tasks exist for this project, try to import from JIRA
+			statusBar.showForSeconds("[yellow]Loading tasks from JIRA...", 2)
+			pane.importTasksForEpic(*pane.activeProject, pane.activeProject.Jira)
+		}
+	}
+	
 	taskPane.LoadProjectTasks(*pane.activeProject)
 
 	removeThirdCol()
@@ -348,16 +367,30 @@ func (pane *ProjectPane) importEpicsFromJira() {
 
 // importTasksForEpic imports tasks for a specific epic
 func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey string) {
+	fmt.Fprintf(file, "Starting task import for project %s (ID: %d) from epic %s\n", project.Title, project.ID, epicKey)
+	
 	tasks, err := pane.jira.ListTasksForEpic(epicKey)
 	if err != nil {
+		fmt.Fprintf(file, "Error getting tasks from JIRA: %v\n", err)
 		return
 	}
 
+	fmt.Fprintf(file, "Found %d tasks from JIRA\n", len(tasks))
+	imported := 0
+	skipped := 0
+
 	for _, task := range tasks {
+		fmt.Fprintf(file, "Processing task: %s - %s\n", task.Key, task.Fields.Summary)
+		
 		// Check if task already exists
 		existing, err := taskRepo.GetByJiraID(task.Key)
 		if err == nil && existing != nil {
+			fmt.Fprintf(file, "  Task %s already exists (ProjectID: %d), skipping\n", task.Key, existing.ProjectID)
+			skipped++
 			continue
+		}
+		if err != nil {
+			fmt.Fprintf(file, "  Error checking existing task %s: %v\n", task.Key, err)
 		}
 
 		// Create task
@@ -369,8 +402,19 @@ func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey strin
 			JiraID:    task.Key,
 		}
 
-		_ = taskRepo.CreateTask(&newTask)
+		fmt.Fprintf(file, "  Creating new task: ProjectID=%d, Title=%s, JiraID=%s, Completed=%v\n", 
+			newTask.ProjectID, newTask.Title, newTask.JiraID, newTask.Completed)
+
+		err = taskRepo.CreateTask(&newTask)
+		if err != nil {
+			fmt.Fprintf(file, "  Error creating task %s: %v\n", task.Key, err)
+		} else {
+			fmt.Fprintf(file, "  Successfully created task %s\n", task.Key)
+			imported++
+		}
 	}
+	
+	fmt.Fprintf(file, "Task import completed: %d imported, %d skipped\n", imported, skipped)
 }
 
 // findProjectByJiraID finds a project by its JIRA ID
@@ -482,4 +526,92 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 		5,
 	)
 	pane.loadListItems(true)
+}
+
+// forceRefreshTasks forces a refresh of tasks for the currently selected project
+func (pane *ProjectPane) forceRefreshTasks() {
+	if pane.jira == nil {
+		statusBar.showForSeconds("[red]JIRA not configured", 3)
+		return
+	}
+
+	selectedIndex := pane.list.GetCurrentItem()
+	projectindex := selectedIndex - pane.projectListStarting
+	if projectindex >= 0 && projectindex < len(pane.projects) {
+		project := pane.projects[projectindex]
+		if project.Jira == "" {
+			statusBar.showForSeconds("[yellow]Project has no JIRA epic associated", 3)
+			return
+		}
+
+		statusBar.showForSeconds("[yellow]Refreshing tasks from JIRA...", 2)
+		pane.importTasksForEpic(project, project.Jira)
+		
+		// If this is the active project, reload its tasks
+		if pane.activeProject != nil && pane.activeProject.ID == project.ID {
+			taskPane.LoadProjectTasks(*pane.activeProject)
+		}
+		
+		statusBar.showForSeconds("[lime]Tasks refreshed from JIRA", 3)
+	} else {
+		statusBar.showForSeconds("[yellow]Select a project first", 3)
+	}
+}
+
+// fixOrphanedTasks fixes tasks that exist with JIRA IDs but wrong ProjectIDs
+func (pane *ProjectPane) fixOrphanedTasks() {
+	if pane.jira == nil {
+		statusBar.showForSeconds("[red]JIRA not configured", 3)
+		return
+	}
+
+	selectedIndex := pane.list.GetCurrentItem()
+	projectindex := selectedIndex - pane.projectListStarting
+	if projectindex >= 0 && projectindex < len(pane.projects) {
+		project := pane.projects[projectindex]
+		if project.Jira == "" {
+			statusBar.showForSeconds("[yellow]Project has no JIRA epic associated", 3)
+			return
+		}
+
+		statusBar.showForSeconds("[yellow]Finding and fixing orphaned tasks...", 2)
+		
+		// Get all tasks for this epic from JIRA
+		tasks, err := pane.jira.ListTasksForEpic(project.Jira)
+		if err != nil {
+			statusBar.showForSeconds("[red]Error getting tasks from JIRA: "+err.Error(), 5)
+			return
+		}
+
+		fixed := 0
+		for _, jiraTask := range tasks {
+			// Check if task exists with wrong ProjectID
+			existing, err := taskRepo.GetByJiraID(jiraTask.Key)
+			if err == nil && existing != nil && existing.ProjectID != project.ID {
+				fmt.Fprintf(file, "Fixing task %s: changing ProjectID from %d to %d\n", 
+					jiraTask.Key, existing.ProjectID, project.ID)
+				
+				// Update the ProjectID
+				existing.ProjectID = project.ID
+				err = taskRepo.Update(existing)
+				if err != nil {
+					fmt.Fprintf(file, "Error updating task %s: %v\n", jiraTask.Key, err)
+				} else {
+					fixed++
+				}
+			}
+		}
+
+		if fixed > 0 {
+			statusBar.showForSeconds(fmt.Sprintf("[lime]Fixed %d orphaned tasks", fixed), 5)
+			// Reload tasks to show the fixed ones
+			if pane.activeProject != nil && pane.activeProject.ID == project.ID {
+				taskPane.LoadProjectTasks(*pane.activeProject)
+			}
+		} else {
+			statusBar.showForSeconds("[yellow]No orphaned tasks found", 3)
+		}
+	} else {
+		statusBar.showForSeconds("[yellow]Select a project first", 3)
+	}
 }
