@@ -1,6 +1,7 @@
 package storm
 
 import (
+	"strings"
 	"time"
 
 	"github.com/asdine/storm/v3"
@@ -124,6 +125,53 @@ func (t *taskRepository) DeleteAllByProjectID(projectID int64) error {
 	}
 
 	return nil
+}
+
+func (t *taskRepository) SearchTasks(query string) ([]model.Task, error) {
+	var allTasks []model.Task
+	err := t.DB.All(&allTasks)
+	if err != nil {
+		return nil, err
+	}
+
+	var matchingTasks []model.Task
+	lowerQuery := strings.ToLower(query)
+	
+	for _, task := range allTasks {
+		// Search in title, details, and JIRA ID
+		if strings.Contains(strings.ToLower(task.Title), lowerQuery) ||
+		   strings.Contains(strings.ToLower(task.Details), lowerQuery) ||
+		   strings.Contains(strings.ToLower(task.JiraID), lowerQuery) {
+			matchingTasks = append(matchingTasks, task)
+		}
+	}
+
+	return matchingTasks, nil
+}
+
+func (t *taskRepository) SearchTasksInProject(projectID int64, query string) ([]model.Task, error) {
+	var projectTasks []model.Task
+	err := t.DB.Find("ProjectID", projectID, &projectTasks)
+	if err != nil {
+		if err == storm.ErrNotFound {
+			return []model.Task{}, nil
+		}
+		return nil, err
+	}
+
+	var matchingTasks []model.Task
+	lowerQuery := strings.ToLower(query)
+	
+	for _, task := range projectTasks {
+		// Search in title, details, and JIRA ID
+		if strings.Contains(strings.ToLower(task.Title), lowerQuery) ||
+		   strings.Contains(strings.ToLower(task.Details), lowerQuery) ||
+		   strings.Contains(strings.ToLower(task.JiraID), lowerQuery) {
+			matchingTasks = append(matchingTasks, task)
+		}
+	}
+
+	return matchingTasks, nil
 }
 
 func getRoundedDueDate(date time.Time) int64 {

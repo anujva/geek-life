@@ -94,20 +94,37 @@ func (j *jira) UpdateConfig() error {
 }
 
 func (j *jira) CreateEpic(title, description string) (string, error) {
-	// Try simple epic creation first, fall back to complex config if needed
-	payload := map[string]interface{}{
-		"fields": map[string]interface{}{
-			"project": map[string]string{
-				"key": j.projectKey,
-			},
-			"summary":     title,
-			"description": description,
-			"issuetype": map[string]string{
-				"name": "Epic",
-			},
-			// Try common epic name fields
-			"customfield_10011": title, // Common epic name field
+	// Ensure config is loaded to get the correct epic name field
+	err := j.ensureConfigLoaded()
+	if err != nil {
+		fmt.Fprintf(file, "failed to load config: %v\n", err)
+		// Continue with basic payload if config loading fails
+	}
+
+	// Build the basic payload
+	fields := map[string]interface{}{
+		"project": map[string]string{
+			"key": j.projectKey,
 		},
+		"summary":     title,
+		"description": description,
+		"issuetype": map[string]string{
+			"name": "Epic",
+		},
+	}
+
+	// Add epic name field if we have it configured
+	if epicNameField, exists := j.config["epicName"]; exists && epicNameField != "" {
+		fields[epicNameField] = title
+		fmt.Fprintf(file, "Using configured epic name field: %s\n", epicNameField)
+	} else {
+		// Try common epic name fields as fallback
+		fmt.Fprintf(file, "No epic name field configured, trying common fields\n")
+		// Don't add any custom field by default to avoid 400 errors
+	}
+
+	payload := map[string]interface{}{
+		"fields": fields,
 	}
 
 	payloadBytes, err := json.Marshal(payload)
@@ -115,15 +132,18 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 		return "", err
 	}
 
+	fmt.Fprintf(file, "Epic creation payload: %s\n", string(payloadBytes))
+
 	url := "/rest/api/2/issue"
 	b, err := j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
+		fmt.Fprintf(file, "Epic creation failed: %v\n", err)
 		return "", err
 	}
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
-		fmt.Fprintf(file, "error unmarshalling; %+v\n", err)
+		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
 		return "", err
 	}
 	return epic.ID, nil

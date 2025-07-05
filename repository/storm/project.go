@@ -1,6 +1,8 @@
 package storm
 
 import (
+	"strings"
+
 	"github.com/asdine/storm/v3"
 
 	"github.com/ajaxray/geek-life/model"
@@ -69,6 +71,27 @@ func (repo *projectRepository) UpdateField(
 	value interface{},
 ) error {
 	return repo.DB.UpdateField(task, field, value)
+}
+
+func (repo *projectRepository) SearchProjects(query string) ([]model.Project, error) {
+	var allProjects []model.Project
+	err := repo.DB.All(&allProjects)
+	if err != nil {
+		return nil, err
+	}
+
+	var matchingProjects []model.Project
+	lowerQuery := strings.ToLower(query)
+	
+	for _, project := range allProjects {
+		// Search in title and JIRA ID
+		if strings.Contains(strings.ToLower(project.Title), lowerQuery) ||
+		   strings.Contains(strings.ToLower(project.Jira), lowerQuery) {
+			matchingProjects = append(matchingProjects, project)
+		}
+	}
+
+	return matchingProjects, nil
 }
 
 func (repo *projectRepository) getOneByField(
