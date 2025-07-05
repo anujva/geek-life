@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"unicode"
 
 	"github.com/gdamore/tcell/v2"
@@ -16,7 +17,27 @@ type ProjectDetailPane struct {
 }
 
 func removeProjectWithConfirmation() {
-	AskYesNo("Do you want to delete Project?", projectPane.RemoveActivateProject)
+	if projectPane.activeProject == nil {
+		return
+	}
+
+	// Get task count for this project
+	tasks, err := taskRepo.GetAllByProject(*projectPane.activeProject)
+	taskCount := 0
+	if err == nil {
+		taskCount = len(tasks)
+	}
+
+	var message string
+	if taskCount == 0 {
+		message = "Do you want to delete this project?\n\nThis project has no tasks."
+	} else if taskCount == 1 {
+		message = "Do you want to delete this project?\n\nThis will also delete 1 task."
+	} else {
+		message = fmt.Sprintf("Do you want to delete this project?\n\nThis will also delete %d tasks.", taskCount)
+	}
+
+	AskYesNo(message, projectPane.RemoveActivateProject)
 }
 
 func clearCompletedWithConfirmation() {

@@ -106,6 +106,26 @@ func (t *taskRepository) Delete(task *model.Task) error {
 	return t.DB.DeleteStruct(task)
 }
 
+func (t *taskRepository) DeleteAllByProjectID(projectID int64) error {
+	var tasks []model.Task
+	err := t.DB.Find("ProjectID", projectID, &tasks)
+	if err != nil {
+		// If no tasks are found, that's fine - nothing to delete
+		if err == storm.ErrNotFound {
+			return nil
+		}
+		return err
+	}
+
+	for i := range tasks {
+		if err := t.DB.DeleteStruct(&tasks[i]); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 func getRoundedDueDate(date time.Time) int64 {
 	if date.IsZero() {
 		return 0

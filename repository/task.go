@@ -20,4 +20,5 @@ type TaskRepository interface {
 	Update(t *model.Task) error
 	UpdateField(t *model.Task, field string, value interface{}) error
 	Delete(t *model.Task) error
+	DeleteAllByProjectID(projectID int64) error
 }

@@ -229,7 +229,7 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 
 func (pane *ProjectPane) activateProject(idx int) {
 	pane.activeProject = &pane.projects[idx]
-	
+
 	// If this project has a JIRA ID but no tasks, try to import them
 	if pane.activeProject.Jira != "" && pane.jira != nil {
 		existingTasks, err := taskRepo.GetAllByProject(*pane.activeProject)
@@ -239,7 +239,7 @@ func (pane *ProjectPane) activateProject(idx int) {
 			pane.importTasksForEpic(*pane.activeProject, pane.activeProject.Jira)
 		}
 	}
-	
+
 	taskPane.LoadProjectTasks(*pane.activeProject)
 
 	removeThirdCol()
@@ -250,16 +250,24 @@ func (pane *ProjectPane) activateProject(idx int) {
 
 // RemoveActivateProject deletes the currently active project
 func (pane *ProjectPane) RemoveActivateProject() {
-	if pane.activeProject != nil && pane.repo.Delete(pane.activeProject) == nil {
-
-		for i := range taskPane.tasks {
-			_ = taskRepo.Delete(&taskPane.tasks[i])
+	if pane.activeProject != nil {
+		// Delete all tasks associated with this project first
+		err := taskRepo.DeleteAllByProjectID(pane.activeProject.ID)
+		if err != nil {
+			statusBar.showForSeconds("[red]Failed to delete project tasks: "+err.Error(), 5)
+			return
 		}
-		taskPane.ClearList()
 
+		// Delete the project itself
+		err = pane.repo.Delete(pane.activeProject)
+		if err != nil {
+			statusBar.showForSeconds("[red]Failed to delete project: "+err.Error(), 5)
+			return
+		}
+
+		taskPane.ClearList()
 		statusBar.showForSeconds("[lime]Removed Project: "+pane.activeProject.Title, 5)
 		removeThirdCol()
-
 		pane.loadListItems(true)
 	}
 }
@@ -340,7 +348,7 @@ func (pane *ProjectPane) importEpicsFromJira() {
 			continue
 		}
 
-		// Add to in-memory projects list  
+		// Add to in-memory projects list
 		pane.projects = append(pane.projects, project)
 
 		// Import tasks for this epic
@@ -521,12 +529,12 @@ func (pane *ProjectPane) forceRefreshTasks() {
 
 		statusBar.showForSeconds("[yellow]Refreshing tasks from JIRA...", 2)
 		pane.importTasksForEpic(project, project.Jira)
-		
+
 		// If this is the active project, reload its tasks
 		if pane.activeProject != nil && pane.activeProject.ID == project.ID {
 			taskPane.LoadProjectTasks(*pane.activeProject)
 		}
-		
+
 		statusBar.showForSeconds("[lime]Tasks refreshed from JIRA", 3)
 	} else {
 		statusBar.showForSeconds("[yellow]Select a project first", 3)
@@ -550,7 +558,7 @@ func (pane *ProjectPane) fixOrphanedTasks() {
 		}
 
 		statusBar.showForSeconds("[yellow]Finding and fixing orphaned tasks...", 2)
-		
+
 		// Get all tasks for this epic from JIRA
 		tasks, err := pane.jira.ListTasksForEpic(project.Jira)
 		if err != nil {
