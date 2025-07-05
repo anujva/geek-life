@@ -367,30 +367,16 @@ func (pane *ProjectPane) importEpicsFromJira() {
 
 // importTasksForEpic imports tasks for a specific epic
 func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey string) {
-	fmt.Fprintf(file, "Starting task import for project %s (ID: %d) from epic %s\n", project.Title, project.ID, epicKey)
-	
 	tasks, err := pane.jira.ListTasksForEpic(epicKey)
 	if err != nil {
-		fmt.Fprintf(file, "Error getting tasks from JIRA: %v\n", err)
 		return
 	}
 
-	fmt.Fprintf(file, "Found %d tasks from JIRA\n", len(tasks))
-	imported := 0
-	skipped := 0
-
 	for _, task := range tasks {
-		fmt.Fprintf(file, "Processing task: %s - %s\n", task.Key, task.Fields.Summary)
-		
 		// Check if task already exists
 		existing, err := taskRepo.GetByJiraID(task.Key)
 		if err == nil && existing != nil {
-			fmt.Fprintf(file, "  Task %s already exists (ProjectID: %d), skipping\n", task.Key, existing.ProjectID)
-			skipped++
 			continue
-		}
-		if err != nil {
-			fmt.Fprintf(file, "  Error checking existing task %s: %v\n", task.Key, err)
 		}
 
 		// Create task
@@ -402,19 +388,8 @@ func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey strin
 			JiraID:    task.Key,
 		}
 
-		fmt.Fprintf(file, "  Creating new task: ProjectID=%d, Title=%s, JiraID=%s, Completed=%v\n", 
-			newTask.ProjectID, newTask.Title, newTask.JiraID, newTask.Completed)
-
-		err = taskRepo.CreateTask(&newTask)
-		if err != nil {
-			fmt.Fprintf(file, "  Error creating task %s: %v\n", task.Key, err)
-		} else {
-			fmt.Fprintf(file, "  Successfully created task %s\n", task.Key)
-			imported++
-		}
+		_ = taskRepo.CreateTask(&newTask)
 	}
-	
-	fmt.Fprintf(file, "Task import completed: %d imported, %d skipped\n", imported, skipped)
 }
 
 // findProjectByJiraID finds a project by its JIRA ID
@@ -588,15 +563,10 @@ func (pane *ProjectPane) fixOrphanedTasks() {
 			// Check if task exists with wrong ProjectID
 			existing, err := taskRepo.GetByJiraID(jiraTask.Key)
 			if err == nil && existing != nil && existing.ProjectID != project.ID {
-				fmt.Fprintf(file, "Fixing task %s: changing ProjectID from %d to %d\n", 
-					jiraTask.Key, existing.ProjectID, project.ID)
-				
 				// Update the ProjectID
 				existing.ProjectID = project.ID
 				err = taskRepo.Update(existing)
-				if err != nil {
-					fmt.Fprintf(file, "Error updating task %s: %v\n", jiraTask.Key, err)
-				} else {
+				if err == nil {
 					fixed++
 				}
 			}

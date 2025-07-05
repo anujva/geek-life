@@ -276,17 +276,9 @@ func (pane *TaskPane) LoadProjectTasks(project model.Project) {
 	var tasks []model.Task
 	var err error
 
-	fmt.Fprintf(file, "Loading tasks for project: %s (ID: %d, JIRA: %s)\n", project.Title, project.ID, project.Jira)
-
 	if tasks, err = taskRepo.GetAllByProject(project); err != nil && err != storm.ErrNotFound {
-		fmt.Fprintf(file, "Error loading tasks: %v\n", err)
 		statusBar.showForSeconds("[red::]Error: "+err.Error(), 5)
 	} else {
-		fmt.Fprintf(file, "Found %d tasks for project %d\n", len(tasks), project.ID)
-		for i, task := range tasks {
-			fmt.Fprintf(file, "  Task %d: %s (ID: %d, ProjectID: %d, JiraID: %s)\n", 
-				i+1, task.Title, task.ID, task.ProjectID, task.JiraID)
-		}
 		pane.SetList(tasks)
 	}
 

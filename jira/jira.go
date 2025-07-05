@@ -426,38 +426,26 @@ func (j *jira) ListTasksForEpic(epicID string) ([]JiraIssue, error) {
 		fmt.Sprintf("project=%s AND cf[10011]=%s", j.projectKey, epicID), // Another common epic link field
 	}
 	
-	fmt.Fprintf(file, "Looking for tasks under epic: %s\n", epicID)
-	
-	for i, jql := range queries {
+	for _, jql := range queries {
 		encodedJQL := url.QueryEscape(jql)
 		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
-		fmt.Fprintf(file, "Task query %d - JQL: %s\n", i+1, jql)
-		fmt.Fprintf(file, "Task query %d - URL: %s\n", i+1, requestURL)
 		
 		b, err := j.client.MakeRequest("GET", requestURL, nil)
 		if err != nil {
-			fmt.Fprintf(file, "Error with task query %d: %v\n", i+1, err)
 			continue
 		}
 		
 		tasks := JiraIssueResult{}
 		err = json.Unmarshal(b, &tasks)
 		if err != nil {
-			fmt.Fprintf(file, "Error unmarshaling task response %d: %v\n", i+1, err)
 			continue
 		}
 		
-		fmt.Fprintf(file, "Task query %d returned %d tasks\n", i+1, len(tasks.Issues))
 		if len(tasks.Issues) > 0 {
-			// Log some task info for debugging
-			for _, task := range tasks.Issues {
-				fmt.Fprintf(file, "  Found task: %s - %s\n", task.Key, task.Fields.Summary)
-			}
 			return tasks.Issues, nil
 		}
 	}
 	
-	fmt.Fprintf(file, "No tasks found for epic %s with any query\n", epicID)
 	return []JiraIssue{}, nil
 }
 
