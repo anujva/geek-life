@@ -137,7 +137,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 		util.LogError("error unmarshalling epic response: %+v", err)
 		return "", err
 	}
-	return epic.ID, nil
+	return epic.Key, nil
 }
 
 func (j *jira) UpdateEpic(title, description string, epicID string) (string, error) {
@@ -170,7 +170,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 		util.LogError("error unmarshalling epic response: %+v", err)
 		return "", err
 	}
-	return epic.ID, nil
+	return epic.Key, nil
 }
 
 func (j *jira) CreateTask(title, description string, epicID string) (string, error) {

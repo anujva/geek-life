@@ -3,12 +3,12 @@ package util
 import (
 	"os"
 	"strconv"
-	// "github.com/subosito/gotenv"
+	"github.com/subosito/gotenv"
 )
 
-// func init() {
-// 	gotenv.Load()
-// }
+func init() {
+	gotenv.Load()
+}
 
 // GetEnvInt finds an ENV variable and converts to int, otherwise return default value
 func GetEnvInt(key string, defaultVal int) int {

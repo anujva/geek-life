@@ -10,6 +10,7 @@ require (
 	github.com/pgavlin/femto v0.0.0-20201224065653-0c9d20f9cac4
 	github.com/rivo/tview v0.0.0-20210111184519-c818a0c789ee
 	github.com/spf13/pflag v1.0.5
+	github.com/subosito/gotenv v1.6.0
 )
 
 require (
@@ -24,15 +25,13 @@ require (
 	github.com/mattn/go-runewidth v0.0.9 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
-	github.com/stretchr/testify v1.7.0 // indirect
 	github.com/zyedidia/micro v1.4.1 // indirect
 	go.etcd.io/bbolt v1.3.5 // indirect
 	golang.org/x/net v0.0.0-20201224014010-6772e930b67b // indirect
-	golang.org/x/sys v0.0.0-20210113131315-ba0562f347e0 // indirect
-	golang.org/x/text v0.3.5 // indirect
+	golang.org/x/sys v0.5.0 // indirect
+	golang.org/x/text v0.12.0 // indirect
 	google.golang.org/appengine v1.6.7 // indirect
 	google.golang.org/protobuf v1.25.0 // indirect
 	gopkg.in/check.v1 v1.0.0-20201130134442-10cb98267c6c // indirect
 	gopkg.in/yaml.v2 v2.4.0 // indirect
-	gopkg.in/yaml.v3 v3.0.0-20210107192922-496545a6307b // indirect
 )
