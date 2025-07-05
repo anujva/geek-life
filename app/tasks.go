@@ -2,7 +2,6 @@ package main
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"time"
 	"unicode"
@@ -18,7 +17,6 @@ import (
 )
 
 var (
-	file        *os.File
 	welcomeText = `Welcome to the organized life!
 ------------------------------
 Create TaskList/Project at the bottom of Projects pane.
@@ -32,13 +30,6 @@ Or create a new Project (Press p,n).
 
 Help - https://bit.ly/cli-task`
 
-func init() {
-	var err error
-	file, err = os.Create("output.txt")
-	if err != nil {
-		panic(err)
-	}
-}
 
 // TaskPane displays tasks of current TaskList or Project
 type TaskPane struct {

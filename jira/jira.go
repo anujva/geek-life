@@ -4,21 +4,12 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/url"
-	"os"
 	"strings"
 
 	"github.com/ajaxray/geek-life/api"
+	"github.com/ajaxray/geek-life/util"
 )
 
-var file *os.File
-
-func init() {
-	var err error
-	file, err = os.Create("output.txt")
-	if err != nil {
-		panic(err)
-	}
-}
 
 type Jira interface {
 	CreateEpic(title, description string) (string, error)
@@ -68,15 +59,15 @@ func (j *jira) UpdateConfig() error {
 		nil,
 	)
 	if err != nil {
-		fmt.Fprintf(file, "error making request: %v\n", err)
+		util.LogError("error making request: %v", err)
 		return err
 	}
 
-	fmt.Fprintf(file, "%s", string(b))
+	util.LogDebug("Field configuration response: %s", string(b))
 	v := make([]Field, 0)
 	err = json.Unmarshal(b, &v)
 	if err != nil {
-		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
+		util.LogError("error unmarshalling field configuration: %+v", err)
 		return err
 	}
 
@@ -97,7 +88,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 	// Ensure config is loaded to get the correct epic name field
 	err := j.ensureConfigLoaded()
 	if err != nil {
-		fmt.Fprintf(file, "failed to load config: %v\n", err)
+		util.LogWarning("failed to load config: %v", err)
 		// Continue with basic payload if config loading fails
 	}
 
@@ -116,10 +107,10 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 	// Add epic name field if we have it configured
 	if epicNameField, exists := j.config["epicName"]; exists && epicNameField != "" {
 		fields[epicNameField] = title
-		fmt.Fprintf(file, "Using configured epic name field: %s\n", epicNameField)
+		util.LogInfo("Using configured epic name field: %s", epicNameField)
 	} else {
 		// Try common epic name fields as fallback
-		fmt.Fprintf(file, "No epic name field configured, trying common fields\n")
+		util.LogInfo("No epic name field configured, trying common fields")
 		// Don't add any custom field by default to avoid 400 errors
 	}
 
@@ -132,18 +123,18 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 		return "", err
 	}
 
-	fmt.Fprintf(file, "Epic creation payload: %s\n", string(payloadBytes))
+	util.LogDebug("Epic creation payload: %s", string(payloadBytes))
 
 	url := "/rest/api/2/issue"
 	b, err := j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
-		fmt.Fprintf(file, "Epic creation failed: %v\n", err)
+		util.LogError("Epic creation failed: %v", err)
 		return "", err
 	}
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
-		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
+		util.LogError("error unmarshalling epic response: %+v", err)
 		return "", err
 	}
 	return epic.ID, nil
@@ -176,7 +167,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 	epic := &JiraIssue{}
 	err = json.Unmarshal(b, epic)
 	if err != nil {
-		fmt.Fprintf(file, "error unmarshalling: %+v\n", err)
+		util.LogError("error unmarshalling epic response: %+v", err)
 		return "", err
 	}
 	return epic.ID, nil
@@ -211,11 +202,11 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 	if err != nil {
 		return "", err
 	}
-	fmt.Fprintf(file, "Task: %s\n", string(b))
+	util.LogDebug("Task creation response: %s", string(b))
 	task := &JiraIssue{}
 	err = json.Unmarshal(b, task)
 	if err != nil {
-		fmt.Println("error unmarshalling", err)
+		util.LogError("error unmarshalling task response: %v", err)
 		return "", err
 	}
 	return task.Key, nil
@@ -247,9 +238,9 @@ func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
 		return "", err
 	}
 	
-	fmt.Fprintf(file, "Available transitions for task %s:\n", taskID)
+	util.LogDebug("Available transitions for task %s:", taskID)
 	for _, transition := range transitions.Transitions {
-		fmt.Fprintf(file, "  ID: %s, Name: %s, To: %s, Category: %s\n", 
+		util.LogDebug("  ID: %s, Name: %s, To: %s, Category: %s", 
 			transition.ID, transition.Name, transition.To.Name, transition.To.StatusCategory.Key)
 	}
 	
@@ -261,7 +252,7 @@ func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
 	
 	for _, transition := range transitions.Transitions {
 		if transition.To.StatusCategory.Key == targetCategory {
-			fmt.Fprintf(file, "Selected transition ID %s for completed=%v\n", transition.ID, completed)
+			util.LogInfo("Selected transition ID %s for completed=%v", transition.ID, completed)
 			return transition.ID, nil
 		}
 	}
@@ -275,7 +266,7 @@ func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
 	for _, targetName := range targetNames {
 		for _, transition := range transitions.Transitions {
 			if strings.Contains(strings.ToLower(transition.To.Name), strings.ToLower(targetName)) {
-				fmt.Fprintf(file, "Selected transition ID %s by name match for completed=%v\n", transition.ID, completed)
+				util.LogInfo("Selected transition ID %s by name match for completed=%v", transition.ID, completed)
 				return transition.ID, nil
 			}
 		}
@@ -304,17 +295,17 @@ func (j *jira) UpdateTask(
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(file, "Bytes: %s\n", payloadBytes)
+	util.LogDebug("Task update payload: %s", payloadBytes)
 	url := fmt.Sprintf("/rest/api/2/issue/%s", taskID)
 	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
 	if err != nil {
 		return err
 	}
-	fmt.Fprintf(file, "B: %s\n", b)
+	util.LogDebug("Task update response: %s", b)
 	// Get the correct transition ID for this task
 	transitionID, err := j.getTransitionID(taskID, completed)
 	if err != nil {
-		fmt.Fprintf(file, "Error getting transition ID: %v\n", err)
+		util.LogError("Error getting transition ID: %v", err)
 		return err
 	}
 
@@ -326,14 +317,14 @@ func (j *jira) UpdateTask(
 	}
 	payloadBytes, err = json.Marshal(payload)
 	if err != nil {
-		fmt.Fprintf(file, "Error while marshing payload: %+v\n", err)
+		util.LogError("Error while marshaling payload: %+v", err)
 		return err
 	}
-	fmt.Fprintf(file, "Bytes: %s\n", payloadBytes)
+	util.LogDebug("Task update payload: %s", payloadBytes)
 	url = fmt.Sprintf("/rest/api/2/issue/%s/transitions", taskID)
 	_, err = j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
-		fmt.Fprintf(file, "Error while calling transitions: %+v\n", err)
+		util.LogError("Error while calling transitions: %+v", err)
 		return err
 	}
 	return nil
@@ -364,9 +355,8 @@ func (j *jira) ListGeekLifeEpics() ([]JiraIssue, error) {
 		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=currentUser()", j.projectKey),
 	}
 
-	fmt.Fprintf(
-		file,
-		"Trying to find epics for user: %s in project: %s\n",
+	util.LogInfo(
+		"Trying to find epics for user: %s in project: %s",
 		j.username,
 		j.projectKey,
 	)
@@ -375,27 +365,27 @@ func (j *jira) ListGeekLifeEpics() ([]JiraIssue, error) {
 		// Properly URL encode the JQL query
 		encodedJQL := url.QueryEscape(jql)
 		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
-		fmt.Fprintf(file, "Attempt %d - JQL: %s\n", i+1, jql)
-		fmt.Fprintf(file, "Attempt %d - Encoded URL: %s\n", i+1, requestURL)
+		util.LogDebug("Attempt %d - JQL: %s", i+1, jql)
+		util.LogDebug("Attempt %d - Encoded URL: %s", i+1, requestURL)
 
 		b, err := j.client.MakeRequest("GET", requestURL, nil)
 		if err != nil {
-			fmt.Fprintf(file, "Error with query %d: %v\n", i+1, err)
+			util.LogWarning("Error with query %d: %v", i+1, err)
 			continue
 		}
 
 		epics := JiraIssueResult{}
 		err = json.Unmarshal(b, &epics)
 		if err != nil {
-			fmt.Fprintf(file, "Error unmarshaling response for query %d: %v\n", i+1, err)
+			util.LogError("Error unmarshaling response for query %d: %v", i+1, err)
 			continue
 		}
 
-		fmt.Fprintf(file, "Query %d returned %d epics\n", i+1, len(epics.Issues))
+		util.LogInfo("Query %d returned %d epics", i+1, len(epics.Issues))
 		if len(epics.Issues) > 0 {
 			// Log the first epic's creator info for debugging
 			if len(epics.Issues) > 0 {
-				fmt.Fprintf(file, "First epic creator: %s (email: %s)\n",
+				util.LogDebug("First epic creator: %s (email: %s)",
 					epics.Issues[0].Fields.Creator.DisplayName,
 					epics.Issues[0].Fields.Creator.EmailAddress)
 			}
@@ -404,7 +394,7 @@ func (j *jira) ListGeekLifeEpics() ([]JiraIssue, error) {
 	}
 
 	// If no queries returned results, fall back to getting all epics and filter manually
-	fmt.Fprintf(file, "No filtered results, falling back to manual filtering\n")
+	util.LogInfo("No filtered results, falling back to manual filtering")
 	return j.filterEpicsByUser()
 }
 
@@ -415,11 +405,11 @@ func (j *jira) filterEpicsByUser() ([]JiraIssue, error) {
 		return nil, err
 	}
 
-	fmt.Fprintf(file, "Got %d total epics, filtering for user: %s\n", len(allEpics), j.username)
+	util.LogInfo("Got %d total epics, filtering for user: %s", len(allEpics), j.username)
 
 	var userEpics []JiraIssue
 	for _, epic := range allEpics {
-		fmt.Fprintf(file, "Epic: %s, Creator email: %s, Creator name: %s\n",
+		util.LogDebug("Epic: %s, Creator email: %s, Creator name: %s",
 			epic.Fields.Summary,
 			epic.Fields.Creator.EmailAddress,
 			epic.Fields.Creator.DisplayName)
@@ -429,11 +419,11 @@ func (j *jira) filterEpicsByUser() ([]JiraIssue, error) {
 			epic.Fields.Creator.DisplayName == j.username ||
 			strings.ToLower(epic.Fields.Creator.EmailAddress) == strings.ToLower(j.username) {
 			userEpics = append(userEpics, epic)
-			fmt.Fprintf(file, "Matched epic: %s\n", epic.Fields.Summary)
+			util.LogInfo("Matched epic: %s", epic.Fields.Summary)
 		}
 	}
 
-	fmt.Fprintf(file, "Found %d user epics\n", len(userEpics))
+	util.LogInfo("Found %d user epics", len(userEpics))
 	return userEpics, nil
 }
 

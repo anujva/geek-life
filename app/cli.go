@@ -43,6 +43,11 @@ func main() {
 	app = tview.NewApplication()
 	flag.Parse()
 
+	// Initialize logging system
+	if err := util.InitLogger(); err != nil {
+		fmt.Printf("Warning: Failed to initialize logger: %v\n", err)
+	}
+
 	db = util.ConnectStorm(dbFile)
 	defer func() {
 		if err := db.Close(); err != nil {

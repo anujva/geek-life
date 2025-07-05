@@ -1,7 +1,6 @@
 package util
 
 import (
-	"log"
 	"os"
 	"strconv"
 	// "github.com/subosito/gotenv"
@@ -18,7 +17,8 @@ func GetEnvInt(key string, defaultVal int) int {
 
 	if v, ok := os.LookupEnv(key); ok {
 		if intVal, err = strconv.Atoi(v); err != nil {
-			log.Fatal(err)
+			LogError("Failed to convert env var %s to int: %v", key, err)
+			return defaultVal
 		}
 	}
 
