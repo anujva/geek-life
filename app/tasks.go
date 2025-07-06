@@ -10,9 +10,9 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
+	"github.com/ajaxray/geek-life/ticketmanager"
 	"github.com/ajaxray/geek-life/util"
 )
 
@@ -37,13 +37,13 @@ type TaskPane struct {
 	tasks      []model.Task
 	activeTask *model.Task
 
-	newTask      *tview.InputField
-	projectRepo  repository.ProjectRepository
-	taskRepo     repository.TaskRepository
-	hint         *tview.TextView
-	jira         jira.Jira
-	jiraConfig   util.JiraConfig
-	lastGKeyTime int64 // Timestamp for tracking double 'g' press
+	newTask       *tview.InputField
+	projectRepo   repository.ProjectRepository
+	taskRepo      repository.TaskRepository
+	hint          *tview.TextView
+	ticketManager ticketmanager.TicketManager
+	providerType  ticketmanager.ProviderType
+	lastGKeyTime  int64 // Timestamp for tracking double 'g' press
 }
 
 // NewTaskPane initializes and configures a TaskPane
@@ -51,8 +51,6 @@ func NewTaskPane(
 	projectRepo repository.ProjectRepository,
 	taskRepo repository.TaskRepository,
 ) *TaskPane {
-	jiraConfig := util.GetJiraConfig()
-
 	pane := TaskPane{
 		Flex:        tview.NewFlex().SetDirection(tview.FlexRow),
 		list:        tview.NewList().ShowSecondaryText(false),
@@ -62,17 +60,13 @@ func NewTaskPane(
 		hint: tview.NewTextView().
 			SetTextColor(tcell.ColorYellow).
 			SetTextAlign(tview.AlignCenter),
-		jiraConfig: jiraConfig,
+		providerType: ticketmanager.GetProviderType(),
 	}
 
-	if jiraConfig.IsConfigured() {
-		pane.jira = jira.NewJiraClient(
-			jiraConfig.URL,
-			jiraConfig.Username,
-			jiraConfig.APIToken,
-			jiraConfig.APIToken,
-			jiraConfig.ProjectKey,
-		)
+	if ticketmanager.IsAnyProviderConfigured() {
+		if tm, err := ticketmanager.NewTicketManager(); err == nil {
+			pane.ticketManager = tm
+		}
 	}
 
 	pane.list.SetSelectedBackgroundColor(tcell.ColorDarkBlue)
@@ -185,25 +179,41 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 		}
 
 		task := pane.tasks[selectedIndex]
-		if task.JiraID != "" && pane.jiraConfig.IsConfigured() {
-			jiraURL := fmt.Sprintf("%s/browse/%s", pane.jiraConfig.URL, task.JiraID)
-			err := util.OpenInBrowser(jiraURL)
+		if task.JiraID != "" && pane.ticketManager != nil {
+			var ticketURL string
+			var providerName string
+
+			switch pane.providerType {
+			case ticketmanager.ProviderJira:
+				jiraConfig := util.GetJiraConfig()
+				ticketURL = fmt.Sprintf("%s/browse/%s", jiraConfig.URL, task.JiraID)
+				providerName = "JIRA"
+			case ticketmanager.ProviderLinear:
+				ticketURL = fmt.Sprintf("https://linear.app/team/issue/%s", task.JiraID)
+				providerName = "Linear"
+			}
+
+			err := util.OpenInBrowser(ticketURL)
 			if err != nil {
 				statusBar.showForSeconds("[red]Failed to open browser: "+err.Error(), 5)
 			} else {
-				statusBar.showForSeconds("[lime]Opened JIRA task in browser", 3)
+				statusBar.showForSeconds(fmt.Sprintf("[lime]Opened %s task in browser", providerName), 3)
 			}
 		} else if task.JiraID == "" {
-			statusBar.showForSeconds("[yellow]Task has no JIRA task associated", 3)
+			statusBar.showForSeconds("[yellow]Task has no ticket associated", 3)
 		} else {
-			statusBar.showForSeconds("[yellow]JIRA not configured", 3)
+			statusBar.showForSeconds("[yellow]Ticket manager not configured", 3)
 		}
 		return nil
 	case tcell.KeyCtrlJ:
-		// Check if JIRA is configured
-		if pane.jira == nil {
+		// Check if ticket manager is configured
+		if pane.ticketManager == nil {
+			providerName := string(pane.providerType)
 			statusBar.showForSeconds(
-				"[red]JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+				fmt.Sprintf(
+					"[red]%s not configured. Set required environment variables.",
+					providerName,
+				),
 				8,
 			)
 			return nil
@@ -224,26 +234,34 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 			}
 
 			if project.Jira == "" {
+				providerName := string(pane.providerType)
 				statusBar.showForSeconds(
-					"[red]Project has no JIRA epic. Create epic first (Ctrl+J in Projects pane).",
+					fmt.Sprintf(
+						"[red]Project has no %s epic. Create epic first (Ctrl+J in Projects pane).",
+						providerName,
+					),
 					5,
 				)
 				return nil
 			}
 
-			issue, err := pane.jira.DescribeEpic(project.Jira)
+			issue, err := pane.ticketManager.DescribeEpic(project.Jira)
 			if err != nil {
 				statusBar.showForSeconds("[red]Failed to get epic details: "+err.Error(), 5)
 				return nil
 			}
 
-			t, err := pane.jira.CreateTask(
+			t, err := pane.ticketManager.CreateTask(
 				task.Title,
 				task.Details,
 				issue.Key,
 			)
 			if err != nil {
-				statusBar.showForSeconds("[red]Failed to create JIRA task: "+err.Error(), 5)
+				providerName := string(pane.providerType)
+				statusBar.showForSeconds(
+					fmt.Sprintf("[red]Failed to create %s task: %s", providerName, err.Error()),
+					5,
+				)
 				return nil
 			}
 
@@ -251,9 +269,11 @@ func (pane *TaskPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey {
 			_ = pane.taskRepo.Update(&task)
 			pane.LoadProjectTasks(project)
 			pane.list.SetCurrentItem(selectedIndex)
-			statusBar.showForSeconds("[lime]JIRA task created: "+t, 5)
+
+			providerName := string(pane.providerType)
+			statusBar.showForSeconds(fmt.Sprintf("[lime]%s task created: %s", providerName, t), 5)
 		} else {
-			statusBar.showForSeconds("[yellow]Task already has JIRA ID: "+task.JiraID, 3)
+			statusBar.showForSeconds("[yellow]Task already has ticket ID: "+task.JiraID, 3)
 		}
 		return nil
 	}

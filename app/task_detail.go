@@ -15,9 +15,9 @@ import (
 	"github.com/pgavlin/femto/runtime"
 	"github.com/rivo/tview"
 
-	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
+	"github.com/ajaxray/geek-life/ticketmanager"
 	"github.com/ajaxray/geek-life/util"
 )
 
@@ -38,31 +38,25 @@ type TaskDetailPane struct {
 	colorScheme      femto.Colorscheme
 	taskRepo         repository.TaskRepository
 	task             *model.Task
-	jira             jira.Jira
-	jiraConfig       util.JiraConfig
+	ticketManager    ticketmanager.TicketManager
+	providerType     ticketmanager.ProviderType
 }
 
 // NewTaskDetailPane initializes and configures a TaskDetailPane
 func NewTaskDetailPane(taskRepo repository.TaskRepository) *TaskDetailPane {
-	jiraConfig := util.GetJiraConfig()
-
 	pane := TaskDetailPane{
 		Flex:             tview.NewFlex().SetDirection(tview.FlexRow),
 		header:           NewTaskDetailHeader(taskRepo),
 		taskDateDisplay:  tview.NewTextView().SetDynamicColors(true),
 		taskStatusToggle: makeButton("Complete", nil).SetLabelColor(tcell.ColorLightGray),
 		taskRepo:         taskRepo,
-		jiraConfig:       jiraConfig,
+		providerType:     ticketmanager.GetProviderType(),
 	}
 
-	if jiraConfig.IsConfigured() {
-		pane.jira = jira.NewJiraClient(
-			jiraConfig.URL,
-			jiraConfig.Username,
-			jiraConfig.APIToken,
-			jiraConfig.APIToken,
-			jiraConfig.ProjectKey,
-		)
+	if ticketmanager.IsAnyProviderConfigured() {
+		if tm, err := ticketmanager.NewTicketManager(); err == nil {
+			pane.ticketManager = tm
+		}
 	}
 
 	pane.prepareDetailsEditor()
@@ -153,17 +147,22 @@ func (td *TaskDetailPane) updateToggleDisplay() {
 func (td *TaskDetailPane) toggleTaskStatus() {
 	status := !td.task.Completed
 	if taskRepo.UpdateField(td.task, "Completed", status) == nil {
-		if td.task.JiraID != "" && td.jira != nil {
-			err := td.jira.UpdateTask(
+		if td.task.JiraID != "" && td.ticketManager != nil {
+			err := td.ticketManager.UpdateTask(
 				td.task.Title,
 				td.task.Details,
 				status,
 				td.task.JiraID,
 			)
 			if err != nil {
-				statusBar.showForSeconds("[red]Failed to update JIRA task: "+err.Error(), 5)
+				providerName := string(td.providerType)
+				statusBar.showForSeconds(
+					fmt.Sprintf("[red]Failed to update %s task: %s", providerName, err.Error()),
+					5,
+				)
 			} else {
-				statusBar.showForSeconds("[lime]JIRA task updated", 3)
+				providerName := string(td.providerType)
+				statusBar.showForSeconds(fmt.Sprintf("[lime]%s task updated", providerName), 3)
 			}
 		}
 		td.task.Completed = status

@@ -57,22 +57,35 @@ The application has a three-pane layout:
 - `github.com/gdamore/tcell/v2` - Terminal cell manipulation
 - `github.com/atotto/clipboard` - Clipboard operations
 
-### JIRA Integration
-The application supports JIRA integration for importing epics as projects and syncing task status:
+### Ticket Management Integration
+The application supports both JIRA and Linear.app integration for importing epics as projects and syncing task status:
 
 #### Configuration
+Set the `TICKET_PROVIDER` environment variable to choose your provider:
+- `TICKET_PROVIDER=jira` - Use JIRA (default)
+- `TICKET_PROVIDER=linear` - Use Linear.app
+
+**JIRA Configuration:**
 Set these environment variables to enable JIRA integration:
 - `JIRA_URL` - Your JIRA instance URL
 - `JIRA_USERNAME` - Your JIRA username/email  
 - `JIRA_API_TOKEN` - Your JIRA API token
 - `JIRA_PROJECT_KEY` - The JIRA project key to work with
 
+**Linear Configuration:**
+Set these environment variables to enable Linear integration:
+- `LINEAR_API_KEY` - Your Linear API key (get from https://linear.app/settings/api)
+- `LINEAR_TEAM_KEY` - Your Linear team key (e.g., "ENG", "DESIGN")
+
 #### Features
-- **Import User Epics**: Press `Ctrl+I` in the Projects pane to import epics created by the current JIRA user as projects
-- **Create Epic**: Press `Ctrl+J` on a selected project to create a corresponding epic in JIRA
-- **Task Sync**: When marking tasks as complete/incomplete, changes are automatically synced to JIRA if the task has a JIRA ID
-- **Epic-Task Mapping**: Projects correspond to JIRA epics, tasks correspond to JIRA tasks under those epics
-- **User Filtering**: Only imports epics where the creator matches the configured JIRA_USERNAME
+- **Import User Epics**: Press `Ctrl+I` in the Projects pane to import epics/projects created by the current user as projects
+- **Create Epic**: Press `Ctrl+J` on a selected project to create a corresponding epic/project in your ticket system
+- **Task Sync**: When marking tasks as complete/incomplete, changes are automatically synced to your ticket system
+- **Epic-Task Mapping**: 
+  - **JIRA**: Projects → Epics, Tasks → Issues under epics
+  - **Linear**: Projects → Projects, Tasks → Issues within projects
+- **User Filtering**: Only imports epics/projects where the creator matches the current user
+- **Browser Integration**: Press `Ctrl+B` to open tickets directly in your browser
 
 ### Development Notes
 - Go 1.19+ required

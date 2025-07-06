@@ -10,8 +10,8 @@ type Project struct {
 
 func (p Project) GetTitle() string {
 	if p.Jira != "" {
-		return p.Title + " [Jira]"
+		return p.Title + " [Ticket]"
 	}
 
-	return p.Title + " [No Jira project]"
+	return p.Title + " [No Ticket]"
 }

@@ -9,9 +9,9 @@ import (
 	"github.com/gdamore/tcell/v2"
 	"github.com/rivo/tview"
 
-	"github.com/ajaxray/geek-life/jira"
 	"github.com/ajaxray/geek-life/model"
 	"github.com/ajaxray/geek-life/repository"
+	"github.com/ajaxray/geek-life/ticketmanager"
 	"github.com/ajaxray/geek-life/util"
 )
 
@@ -24,31 +24,25 @@ type ProjectPane struct {
 	repo                repository.ProjectRepository
 	activeProject       *model.Project
 	projectListStarting int // The index in list where project names starts
-	jira                jira.Jira
-	jiraConfig          util.JiraConfig
+	ticketManager       ticketmanager.TicketManager
+	providerType        ticketmanager.ProviderType
 	lastGKeyTime        int64 // Timestamp for tracking double 'g' press
 }
 
 // NewProjectPane initializes
 func NewProjectPane(repo repository.ProjectRepository) *ProjectPane {
-	jiraConfig := util.GetJiraConfig()
-
 	pane := ProjectPane{
-		Flex:       tview.NewFlex().SetDirection(tview.FlexRow),
-		list:       tview.NewList().ShowSecondaryText(false),
-		newProject: makeLightTextInput("+[New Project]"),
-		repo:       repo,
-		jiraConfig: jiraConfig,
+		Flex:         tview.NewFlex().SetDirection(tview.FlexRow),
+		list:         tview.NewList().ShowSecondaryText(false),
+		newProject:   makeLightTextInput("+[New Project]"),
+		repo:         repo,
+		providerType: ticketmanager.GetProviderType(),
 	}
 
-	if jiraConfig.IsConfigured() {
-		pane.jira = jira.NewJiraClient(
-			jiraConfig.URL,
-			jiraConfig.Username,
-			jiraConfig.APIToken,
-			jiraConfig.APIToken,
-			jiraConfig.ProjectKey,
-		)
+	if ticketmanager.IsAnyProviderConfigured() {
+		if tm, err := ticketmanager.NewTicketManager(); err == nil {
+			pane.ticketManager = tm
+		}
 	}
 
 	pane.newProject.SetDoneFunc(func(key tcell.Key) {
@@ -166,23 +160,35 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 
 	switch event.Key() {
 	case tcell.KeyCtrlB:
-		// Open JIRA epic in browser
+		// Open epic in browser
 		selectedIndex := pane.list.GetCurrentItem()
 		projectindex := selectedIndex - pane.projectListStarting
 		if projectindex >= 0 && projectindex < len(pane.projects) {
 			project := pane.projects[projectindex]
-			if project.Jira != "" && pane.jiraConfig.IsConfigured() {
-				jiraURL := fmt.Sprintf("%s/browse/%s", pane.jiraConfig.URL, project.Jira)
-				err := util.OpenInBrowser(jiraURL)
+			if project.Jira != "" && pane.ticketManager != nil {
+				var ticketURL string
+				var providerName string
+
+				switch pane.providerType {
+				case ticketmanager.ProviderJira:
+					jiraConfig := util.GetJiraConfig()
+					ticketURL = fmt.Sprintf("%s/browse/%s", jiraConfig.URL, project.Jira)
+					providerName = "JIRA"
+				case ticketmanager.ProviderLinear:
+					ticketURL = fmt.Sprintf("https://linear.app/team/issue/%s", project.Jira)
+					providerName = "Linear"
+				}
+
+				err := util.OpenInBrowser(ticketURL)
 				if err != nil {
 					statusBar.showForSeconds("[red]Failed to open browser: "+err.Error(), 5)
 				} else {
-					statusBar.showForSeconds("[lime]Opened JIRA epic in browser", 3)
+					statusBar.showForSeconds(fmt.Sprintf("[lime]Opened %s epic in browser", providerName), 3)
 				}
 			} else if project.Jira == "" {
-				statusBar.showForSeconds("[yellow]Project has no JIRA epic associated", 3)
+				statusBar.showForSeconds("[yellow]Project has no ticket associated", 3)
 			} else {
-				statusBar.showForSeconds("[yellow]JIRA not configured", 3)
+				statusBar.showForSeconds("[yellow]Ticket manager not configured", 3)
 			}
 		}
 		return nil
@@ -190,32 +196,37 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 		// Get the project that is currently selected
 		selectedIndex := pane.list.GetCurrentItem()
 		projectindex := selectedIndex - pane.projectListStarting
-		if projectindex >= 0 && projectindex < len(pane.projects) && pane.jira != nil {
+		if projectindex >= 0 && projectindex < len(pane.projects) && pane.ticketManager != nil {
 			project := pane.projects[projectindex]
 			if project.Jira == "" {
-				p, err := pane.jira.CreateEpic(project.Title, project.Title)
+				ticketID, err := pane.ticketManager.CreateEpic(project.Title, project.Title)
 				if err != nil {
-					statusBar.showForSeconds("[red]Failed to create JIRA epic: "+err.Error(), 5)
+					statusBar.showForSeconds("[red]Failed to create epic: "+err.Error(), 5)
 					return nil
 				}
-				project.Jira = p
+				project.Jira = ticketID
 				_ = pane.repo.Update(&project)
-				statusBar.showForSeconds("[lime]Created JIRA epic: "+p, 5)
+
+				providerName := string(pane.providerType)
+				statusBar.showForSeconds(
+					fmt.Sprintf("[lime]Created %s epic: %s", providerName, ticketID),
+					5,
+				)
 			}
 			pane.loadListItems(true)
 			pane.list.SetCurrentItem(selectedIndex)
 		}
 		return nil
 	case tcell.KeyCtrlI:
-		// Import epics from JIRA
-		pane.importEpicsFromJira()
+		// Import epics from ticket manager
+		pane.importEpicsFromTicketManager()
 		return nil
 	case tcell.KeyCtrlR:
 		// Clean up duplicate projects and re-link existing ones
 		pane.cleanupAndRelinkProjects()
 		return nil
 	case tcell.KeyCtrlT:
-		// Force refresh tasks for current project from JIRA
+		// Force refresh tasks for current project from ticket system
 		pane.forceRefreshTasks()
 		return nil
 	case tcell.KeyCtrlF:
@@ -230,12 +241,16 @@ func (pane *ProjectPane) handleShortcuts(event *tcell.EventKey) *tcell.EventKey 
 func (pane *ProjectPane) activateProject(idx int) {
 	pane.activeProject = &pane.projects[idx]
 
-	// If this project has a JIRA ID but no tasks, try to import them
-	if pane.activeProject.Jira != "" && pane.jira != nil {
+	// If this project has a ticket ID but no tasks, try to import them
+	if pane.activeProject.Jira != "" && pane.ticketManager != nil {
 		existingTasks, err := taskRepo.GetAllByProject(*pane.activeProject)
 		if err == nil && len(existingTasks) == 0 {
-			// No tasks exist for this project, try to import from JIRA
-			statusBar.showForSeconds("[yellow]Loading tasks from JIRA...", 2)
+			// No tasks exist for this project, try to import from ticket manager
+			providerName := string(pane.providerType)
+			statusBar.showForSeconds(
+				fmt.Sprintf("[yellow]Loading tasks from %s...", providerName),
+				2,
+			)
 			pane.importTasksForEpic(*pane.activeProject, pane.activeProject.Jira)
 		}
 	}
@@ -288,11 +303,15 @@ func (pane *ProjectPane) GetActiveProject() *model.Project {
 	return pane.activeProject
 }
 
-// importEpicsFromJira imports all epics from JIRA as projects
-func (pane *ProjectPane) importEpicsFromJira() {
-	if pane.jira == nil {
+// importEpicsFromTicketManager imports all epics from ticket manager as projects
+func (pane *ProjectPane) importEpicsFromTicketManager() {
+	if pane.ticketManager == nil {
+		providerName := string(pane.providerType)
 		statusBar.showForSeconds(
-			"[red]JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+			fmt.Sprintf(
+				"[red]%s not configured. Set required environment variables.",
+				providerName,
+			),
 			8,
 		)
 		return
@@ -306,25 +325,29 @@ func (pane *ProjectPane) importEpicsFromJira() {
 		return
 	}
 
-	epics, err := pane.jira.ListGeekLifeEpics()
+	epics, err := pane.ticketManager.ListUserEpics()
 	if err != nil {
-		statusBar.showForSeconds("[red]Failed to fetch epics from JIRA: "+err.Error(), 5)
+		providerName := string(pane.providerType)
+		statusBar.showForSeconds(
+			fmt.Sprintf("[red]Failed to fetch epics from %s: %s", providerName, err.Error()),
+			5,
+		)
 		return
 	}
 
 	imported := 0
 	updated := 0
 	for _, epic := range epics {
-		// Check if project already exists with this JIRA ID
+		// Check if project already exists with this ticket ID
 		existingProject := pane.findProjectByJiraID(epic.Key)
 		if existingProject != nil {
 			continue
 		}
 
-		// Check if there's a project with the same title but no JIRA ID
-		existingProjectByTitle := pane.findProjectByTitle(epic.Fields.Summary)
+		// Check if there's a project with the same title but no ticket ID
+		existingProjectByTitle := pane.findProjectByTitle(epic.Title)
 		if existingProjectByTitle != nil && existingProjectByTitle.Jira == "" {
-			// Update existing project with JIRA ID
+			// Update existing project with ticket ID
 			existingProjectByTitle.Jira = epic.Key
 			err := pane.repo.Update(existingProjectByTitle)
 			if err == nil {
@@ -342,8 +365,8 @@ func (pane *ProjectPane) importEpicsFromJira() {
 			continue
 		}
 
-		// Create new project from epic with JIRA ID
-		project, err := pane.repo.CreateWithJira(epic.Fields.Summary, epic.Key)
+		// Create new project from epic with ticket ID
+		project, err := pane.repo.CreateWithJira(epic.Title, epic.Key)
 		if err != nil {
 			continue
 		}
@@ -358,17 +381,19 @@ func (pane *ProjectPane) importEpicsFromJira() {
 	}
 
 	if imported > 0 || updated > 0 {
+		providerName := string(pane.providerType)
 		message := ""
 		if imported > 0 && updated > 0 {
 			message = fmt.Sprintf(
-				"[lime]Imported %d new epics and updated %d existing projects with JIRA IDs",
+				"[lime]Imported %d new epics and updated %d existing projects with %s IDs",
 				imported,
 				updated,
+				providerName,
 			)
 		} else if imported > 0 {
-			message = fmt.Sprintf("[lime]Imported %d user-created epics from JIRA", imported)
+			message = fmt.Sprintf("[lime]Imported %d user-created epics from %s", imported, providerName)
 		} else {
-			message = fmt.Sprintf("[lime]Updated %d existing projects with JIRA IDs", updated)
+			message = fmt.Sprintf("[lime]Updated %d existing projects with %s IDs", updated, providerName)
 		}
 		statusBar.showForSeconds(message, 5)
 		pane.loadListItems(true)
@@ -379,7 +404,11 @@ func (pane *ProjectPane) importEpicsFromJira() {
 
 // importTasksForEpic imports tasks for a specific epic
 func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey string) {
-	tasks, err := pane.jira.ListTasksForEpic(epicKey)
+	if pane.ticketManager == nil {
+		return
+	}
+
+	tasks, err := pane.ticketManager.ListTasksForEpic(epicKey)
 	if err != nil {
 		return
 	}
@@ -394,9 +423,9 @@ func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey strin
 		// Create task
 		newTask := model.Task{
 			ProjectID: project.ID,
-			Title:     task.Fields.Summary,
-			Details:   getTaskDescription(task),
-			Completed: isTaskCompleted(task),
+			Title:     task.Title,
+			Details:   task.Description,
+			Completed: task.Completed,
 			JiraID:    task.Key,
 		}
 
@@ -424,26 +453,15 @@ func (pane *ProjectPane) findProjectByTitle(title string) *model.Project {
 	return nil
 }
 
-// getTaskDescription extracts description from JIRA task
-func getTaskDescription(task jira.JiraIssue) string {
-	if task.Fields.Description != nil {
-		if desc, ok := task.Fields.Description.(string); ok {
-			return desc
-		}
-	}
-	return ""
-}
-
-// isTaskCompleted checks if JIRA task is completed
-func isTaskCompleted(task jira.JiraIssue) bool {
-	return task.Fields.Status.StatusCategory.Key == "done"
-}
-
-// cleanupAndRelinkProjects removes duplicate projects and links existing projects to JIRA
+// cleanupAndRelinkProjects removes duplicate projects and links existing projects to ticket manager
 func (pane *ProjectPane) cleanupAndRelinkProjects() {
-	if pane.jira == nil {
+	if pane.ticketManager == nil {
+		providerName := string(pane.providerType)
 		statusBar.showForSeconds(
-			"[red]JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+			fmt.Sprintf(
+				"[red]%s not configured. Set required environment variables.",
+				providerName,
+			),
 			8,
 		)
 		return
@@ -457,9 +475,13 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 		return
 	}
 
-	epics, err := pane.jira.ListGeekLifeEpics()
+	epics, err := pane.ticketManager.ListUserEpics()
 	if err != nil {
-		statusBar.showForSeconds("[red]Failed to fetch epics from JIRA: "+err.Error(), 5)
+		providerName := string(pane.providerType)
+		statusBar.showForSeconds(
+			fmt.Sprintf("[red]Failed to fetch epics from %s: %s", providerName, err.Error()),
+			5,
+		)
 		return
 	}
 
@@ -472,7 +494,7 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 		var projectWithJira *model.Project
 
 		for i := range pane.projects {
-			if pane.projects[i].Title == epic.Fields.Summary {
+			if pane.projects[i].Title == epic.Title {
 				if pane.projects[i].Jira == epic.Key {
 					projectWithJira = &pane.projects[i]
 				} else if pane.projects[i].Jira == "" {
@@ -508,10 +530,12 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 		}
 	}
 
+	providerName := string(pane.providerType)
 	statusBar.showForSeconds(
 		fmt.Sprintf(
-			"[lime]Linked %d projects to JIRA, removed %d duplicates",
+			"[lime]Linked %d projects to %s, removed %d duplicates",
 			linkedCount,
+			providerName,
 			removedCount,
 		),
 		5,
@@ -521,8 +545,9 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 
 // forceRefreshTasks forces a refresh of tasks for the currently selected project
 func (pane *ProjectPane) forceRefreshTasks() {
-	if pane.jira == nil {
-		statusBar.showForSeconds("[red]JIRA not configured", 3)
+	if pane.ticketManager == nil {
+		providerName := string(pane.providerType)
+		statusBar.showForSeconds(fmt.Sprintf("[red]%s not configured", providerName), 3)
 		return
 	}
 
@@ -531,11 +556,15 @@ func (pane *ProjectPane) forceRefreshTasks() {
 	if projectindex >= 0 && projectindex < len(pane.projects) {
 		project := pane.projects[projectindex]
 		if project.Jira == "" {
-			statusBar.showForSeconds("[yellow]Project has no JIRA epic associated", 3)
+			statusBar.showForSeconds("[yellow]Project has no ticket associated", 3)
 			return
 		}
 
-		statusBar.showForSeconds("[yellow]Refreshing tasks from JIRA...", 2)
+		providerName := string(pane.providerType)
+		statusBar.showForSeconds(
+			fmt.Sprintf("[yellow]Refreshing tasks from %s...", providerName),
+			2,
+		)
 		pane.importTasksForEpic(project, project.Jira)
 
 		// If this is the active project, reload its tasks
@@ -543,16 +572,17 @@ func (pane *ProjectPane) forceRefreshTasks() {
 			taskPane.LoadProjectTasks(*pane.activeProject)
 		}
 
-		statusBar.showForSeconds("[lime]Tasks refreshed from JIRA", 3)
+		statusBar.showForSeconds(fmt.Sprintf("[lime]Tasks refreshed from %s", providerName), 3)
 	} else {
 		statusBar.showForSeconds("[yellow]Select a project first", 3)
 	}
 }
 
-// fixOrphanedTasks fixes tasks that exist with JIRA IDs but wrong ProjectIDs
+// fixOrphanedTasks fixes tasks that exist with ticket IDs but wrong ProjectIDs
 func (pane *ProjectPane) fixOrphanedTasks() {
-	if pane.jira == nil {
-		statusBar.showForSeconds("[red]JIRA not configured", 3)
+	if pane.ticketManager == nil {
+		providerName := string(pane.providerType)
+		statusBar.showForSeconds(fmt.Sprintf("[red]%s not configured", providerName), 3)
 		return
 	}
 
@@ -561,23 +591,27 @@ func (pane *ProjectPane) fixOrphanedTasks() {
 	if projectindex >= 0 && projectindex < len(pane.projects) {
 		project := pane.projects[projectindex]
 		if project.Jira == "" {
-			statusBar.showForSeconds("[yellow]Project has no JIRA epic associated", 3)
+			statusBar.showForSeconds("[yellow]Project has no ticket associated", 3)
 			return
 		}
 
 		statusBar.showForSeconds("[yellow]Finding and fixing orphaned tasks...", 2)
 
-		// Get all tasks for this epic from JIRA
-		tasks, err := pane.jira.ListTasksForEpic(project.Jira)
+		// Get all tasks for this epic from ticket manager
+		tasks, err := pane.ticketManager.ListTasksForEpic(project.Jira)
 		if err != nil {
-			statusBar.showForSeconds("[red]Error getting tasks from JIRA: "+err.Error(), 5)
+			providerName := string(pane.providerType)
+			statusBar.showForSeconds(
+				fmt.Sprintf("[red]Error getting tasks from %s: %s", providerName, err.Error()),
+				5,
+			)
 			return
 		}
 
 		fixed := 0
-		for _, jiraTask := range tasks {
+		for _, task := range tasks {
 			// Check if task exists with wrong ProjectID
-			existing, err := taskRepo.GetByJiraID(jiraTask.Key)
+			existing, err := taskRepo.GetByJiraID(task.Key)
 			if err == nil && existing != nil && existing.ProjectID != project.ID {
 				// Update the ProjectID
 				existing.ProjectID = project.ID
