@@ -136,12 +136,12 @@ func (t *taskRepository) SearchTasks(query string) ([]model.Task, error) {
 
 	var matchingTasks []model.Task
 	lowerQuery := strings.ToLower(query)
-	
+
 	for _, task := range allTasks {
 		// Search in title, details, and JIRA ID
 		if strings.Contains(strings.ToLower(task.Title), lowerQuery) ||
-		   strings.Contains(strings.ToLower(task.Details), lowerQuery) ||
-		   strings.Contains(strings.ToLower(task.JiraID), lowerQuery) {
+			strings.Contains(strings.ToLower(task.Details), lowerQuery) ||
+			strings.Contains(strings.ToLower(task.JiraID), lowerQuery) {
 			matchingTasks = append(matchingTasks, task)
 		}
 	}
@@ -161,12 +161,12 @@ func (t *taskRepository) SearchTasksInProject(projectID int64, query string) ([]
 
 	var matchingTasks []model.Task
 	lowerQuery := strings.ToLower(query)
-	
+
 	for _, task := range projectTasks {
 		// Search in title, details, and JIRA ID
 		if strings.Contains(strings.ToLower(task.Title), lowerQuery) ||
-		   strings.Contains(strings.ToLower(task.Details), lowerQuery) ||
-		   strings.Contains(strings.ToLower(task.JiraID), lowerQuery) {
+			strings.Contains(strings.ToLower(task.Details), lowerQuery) ||
+			strings.Contains(strings.ToLower(task.JiraID), lowerQuery) {
 			matchingTasks = append(matchingTasks, task)
 		}
 	}

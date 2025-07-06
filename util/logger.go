@@ -10,9 +10,9 @@ import (
 )
 
 var (
-	Logger       *log.Logger
-	logWriter    io.Writer
-	initialized  bool
+	Logger      *log.Logger
+	logWriter   io.Writer
+	initialized bool
 )
 
 // InitLogger initializes the logging system
@@ -24,7 +24,7 @@ func InitLogger() error {
 	}
 
 	var err error
-	
+
 	// Try syslog first on Linux systems
 	if runtime.GOOS == "linux" {
 		logWriter, err = syslog.New(syslog.LOG_INFO|syslog.LOG_USER, "geek-life")
@@ -135,7 +135,7 @@ func GetLogPath() string {
 			return "/var/log/messages (via syslog)"
 		}
 	}
-	
+
 	logDir := getLogDirectory()
 	return filepath.Join(logDir, "application.log")
 }

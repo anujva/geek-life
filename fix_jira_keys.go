@@ -16,7 +16,9 @@ func main() {
 	// Get JIRA configuration
 	jiraConfig := util.GetJiraConfig()
 	if !jiraConfig.IsConfigured() {
-		log.Fatal("JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.")
+		log.Fatal(
+			"JIRA not configured. Set JIRA_URL, JIRA_USERNAME, JIRA_API_TOKEN, and JIRA_PROJECT_KEY environment variables.",
+		)
 	}
 
 	// Connect to database
@@ -25,7 +27,7 @@ func main() {
 
 	// Initialize repositories
 	projectRepo := storm.NewProjectRepository(db)
-	
+
 	// Initialize JIRA client
 	jiraClient := jira.NewJiraClient(
 		jiraConfig.URL,
@@ -45,7 +47,7 @@ func main() {
 
 	// Regex to check if Jira field contains only digits (indicating it's an internal ID)
 	numericRegex := regexp.MustCompile(`^\d+$`)
-	
+
 	fixed := 0
 	errors := 0
 
@@ -57,11 +59,19 @@ func main() {
 
 		// Check if this looks like a numeric ID (internal JIRA ID) rather than a key (PROJ-123)
 		if !numericRegex.MatchString(project.Jira) {
-			fmt.Printf("Project '%s' already has a proper JIRA key: %s\n", project.Title, project.Jira)
+			fmt.Printf(
+				"Project '%s' already has a proper JIRA key: %s\n",
+				project.Title,
+				project.Jira,
+			)
 			continue
 		}
 
-		fmt.Printf("Project '%s' has numeric JIRA ID: %s, attempting to fix...\n", project.Title, project.Jira)
+		fmt.Printf(
+			"Project '%s' has numeric JIRA ID: %s, attempting to fix...\n",
+			project.Title,
+			project.Jira,
+		)
 
 		// Try to get the epic details using the numeric ID
 		epic, err := jiraClient.DescribeEpic(project.Jira)
@@ -86,15 +96,22 @@ func main() {
 			continue
 		}
 
-		fmt.Printf("SUCCESS: Updated project '%s' from ID %s to key %s\n", project.Title, epic.ID, epic.Key)
+		fmt.Printf(
+			"SUCCESS: Updated project '%s' from ID %s to key %s\n",
+			project.Title,
+			epic.ID,
+			epic.Key,
+		)
 		fixed++
 	}
 
 	fmt.Printf("\nFix completed!\n")
 	fmt.Printf("Fixed: %d projects\n", fixed)
 	fmt.Printf("Errors: %d projects\n", errors)
-	
+
 	if fixed > 0 {
-		fmt.Println("\nYour projects should now have correct JIRA keys and Ctrl+B should work properly!")
+		fmt.Println(
+			"\nYour projects should now have correct JIRA keys and Ctrl+B should work properly!",
+		)
 	}
 }

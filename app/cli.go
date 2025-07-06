@@ -22,6 +22,7 @@ var (
 	layout, contents *tview.Flex
 
 	statusBar         *StatusBar
+	projectHeaderPane *tview.TextView
 	projectPane       *ProjectPane
 	taskPane          *TaskPane
 	taskDetailPane    *TaskDetailPane
@@ -64,6 +65,7 @@ func main() {
 
 		layout = tview.NewFlex().SetDirection(tview.FlexRow).
 			AddItem(makeTitleBar(), 2, 1, false).
+			AddItem(makeProjectHeader(), 3, 0, false).
 			AddItem(prepareContentPages(), 0, 2, true).
 			AddItem(prepareStatusBar(app), 1, 1, false)
 
@@ -96,7 +98,7 @@ func setKeyboardShortcuts() *tview.Application {
 			ShowSearchModal()
 			return nil
 		}
-		
+
 		switch unicode.ToLower(event.Rune()) {
 		case 'p':
 			app.SetFocus(projectPane)
@@ -156,6 +158,88 @@ func makeTitleBar() *tview.Flex {
 		AddItem(versionInfo, 0, 1, false)
 }
 
+func makeProjectHeader() *tview.TextView {
+	projectHeaderPane = tview.NewTextView()
+	projectHeaderPane.SetTextColor(tcell.ColorWhite).
+		SetTextAlign(tview.AlignCenter).
+		SetWrap(false).
+		SetText("📋 Select a project or list").
+		SetDynamicColors(true)
+	projectHeaderPane.SetBorder(true).SetBorderColor(tcell.ColorDarkGray)
+
+	return projectHeaderPane
+}
+
+// updateProjectHeader updates the project header with current selection
+func updateProjectHeader() {
+	updateProjectHeaderWithContext("")
+}
+
+// updateProjectHeaderWithContext updates the project header with optional context for dynamic lists
+func updateProjectHeaderWithContext(dynamicListType string) {
+	if projectHeaderPane == nil {
+		return
+	}
+
+	activeProject := projectPane.GetActiveProject()
+	if activeProject != nil {
+		// Show selected project name, truncating based on actual available width
+		projectTitle := activeProject.GetTitle()
+		headerText := fmt.Sprintf("📁 %s", projectTitle)
+
+		// Get the actual width available for the header pane
+		_, _, width, _ := projectHeaderPane.GetInnerRect()
+		// Account for the icon (📁 ) and some padding/border space
+		availableWidth := width - 4 // 📁 + space + border padding
+
+		if availableWidth > 0 && len(projectTitle) > availableWidth {
+			// Truncate and add mouse hover for full name
+			truncatedTitle := projectTitle[:availableWidth-3] + "..."
+			headerText = fmt.Sprintf("📁 %s", truncatedTitle)
+			projectHeaderPane.SetText(headerText)
+
+			// Add mouse event handler for hover tooltip
+			projectHeaderPane.SetMouseCapture(
+				func(action tview.MouseAction, event *tcell.EventMouse) (tview.MouseAction, *tcell.EventMouse) {
+					if action == tview.MouseMove {
+						if statusBar != nil {
+							statusBar.showForSeconds(
+								fmt.Sprintf("Full project name: %s", projectTitle),
+								3,
+							)
+						}
+					}
+					return action, event
+				},
+			)
+		} else {
+			// Name fits, show it fully
+			projectHeaderPane.SetText(headerText)
+			projectHeaderPane.SetMouseCapture(nil)
+		}
+	} else if dynamicListType != "" {
+		// Show dynamic list type
+		var icon, title string
+		switch dynamicListType {
+		case "today":
+			icon, title = "📅", "Today (and overdue)"
+		case "tomorrow":
+			icon, title = "📆", "Tomorrow"
+		case "upcoming":
+			icon, title = "🗓️", "Upcoming (next 7 days)"
+		case "unscheduled":
+			icon, title = "📋", "Unscheduled tasks"
+		default:
+			icon, title = "📋", "Dynamic Task List"
+		}
+		projectHeaderPane.SetText(fmt.Sprintf("%s %s", icon, title))
+		projectHeaderPane.SetMouseCapture(nil)
+	} else {
+		projectHeaderPane.SetText("📋 Select a project or list")
+		projectHeaderPane.SetMouseCapture(nil)
+	}
+}
+
 func AskYesNo(text string, f func()) {
 
 	activePane := app.GetFocus()
@@ -182,20 +266,20 @@ func AskYesNo(text string, f func()) {
 
 func ShowSearchModal() {
 	activePane := app.GetFocus()
-	
+
 	// Create search input field
 	searchInput := tview.NewInputField().
 		SetLabel("Search: ").
 		SetPlaceholder("Enter search query...").
 		SetFieldWidth(40)
-	
+
 	// Create results list
 	resultsList := tview.NewList().ShowSecondaryText(false)
 	resultsList.SetBorder(true).SetTitle("Search Results")
-	
+
 	// Track current search results
 	var currentResults []SearchResult
-	
+
 	// Search function
 	performSearch := func(query string) {
 		if len(strings.TrimSpace(query)) < 2 {
@@ -204,11 +288,11 @@ func ShowSearchModal() {
 			resultsList.AddItem("Type at least 2 characters to search", "", 0, nil)
 			return
 		}
-		
+
 		// Clear previous results
 		resultsList.Clear()
 		currentResults = nil
-		
+
 		// Search tasks
 		tasks, err := taskRepo.SearchTasks(query)
 		if err == nil {
@@ -219,17 +303,17 @@ func ShowSearchModal() {
 				if err == nil {
 					projectName = project.Title
 				}
-				
+
 				result := SearchResult{
-					Type:        "task",
-					Title:       fmt.Sprintf("%s: %s", projectName, task.Title),
-					TaskID:      task.ID,
-					ProjectID:   task.ProjectID,
+					Type:      "task",
+					Title:     fmt.Sprintf("%s: %s", projectName, task.Title),
+					TaskID:    task.ID,
+					ProjectID: task.ProjectID,
 				}
 				currentResults = append(currentResults, result)
 			}
 		}
-		
+
 		// Search projects
 		projects, err := projectRepo.SearchProjects(query)
 		if err == nil {
@@ -242,7 +326,7 @@ func ShowSearchModal() {
 				currentResults = append(currentResults, result)
 			}
 		}
-		
+
 		// Display results
 		if len(currentResults) == 0 {
 			resultsList.AddItem("No results found", "", 0, nil)
@@ -254,7 +338,7 @@ func ShowSearchModal() {
 			}
 		}
 	}
-	
+
 	// Set up input field behavior
 	searchInput.SetChangedFunc(performSearch)
 	searchInput.SetDoneFunc(func(key tcell.Key) {
@@ -271,7 +355,7 @@ func ShowSearchModal() {
 			app.SetFocus(resultsList)
 		}
 	})
-	
+
 	// Set up results list behavior
 	resultsList.SetInputCapture(func(event *tcell.EventKey) *tcell.EventKey {
 		switch event.Key() {
@@ -287,14 +371,14 @@ func ShowSearchModal() {
 		}
 		return event
 	})
-	
+
 	// Create modal layout
 	modalFlex := tview.NewFlex().SetDirection(tview.FlexRow).
 		AddItem(searchInput, 3, 0, true).
 		AddItem(resultsList, 0, 1, false)
-	
+
 	modalFlex.SetBorder(true).SetTitle("Search Tasks and Projects (ESC to close, Tab to switch)")
-	
+
 	// Show modal
 	pages := tview.NewPages().
 		AddPage("background", layout, true, true).
@@ -314,22 +398,22 @@ func selectSearchResult(index int, results []SearchResult, activePane tview.Prim
 	if index >= len(results) {
 		return
 	}
-	
+
 	result := results[index]
-	
+
 	// Close modal first
 	app.SetRoot(layout, true).EnableMouse(true)
-	
+
 	if result.Type == "task" {
 		// Load the project and then activate the task
 		project, err := projectRepo.GetByID(result.ProjectID)
 		if err == nil {
 			// Set active project
 			projectPane.activeProject = &project
-			
+
 			// Load project tasks
 			taskPane.LoadProjectTasks(project)
-			
+
 			// Find and activate the specific task
 			for i, task := range taskPane.tasks {
 				if task.ID == result.TaskID {

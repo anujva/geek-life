@@ -10,7 +10,6 @@ import (
 	"github.com/ajaxray/geek-life/util"
 )
 
-
 type Jira interface {
 	CreateEpic(title, description string) (string, error)
 	UpdateEpic(title, description string, epicID string) (string, error)
@@ -219,7 +218,7 @@ func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	
+
 	var transitions struct {
 		Transitions []struct {
 			ID   string `json:"id"`
@@ -232,46 +231,50 @@ func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
 			} `json:"to"`
 		} `json:"transitions"`
 	}
-	
+
 	err = json.Unmarshal(b, &transitions)
 	if err != nil {
 		return "", err
 	}
-	
+
 	util.LogDebug("Available transitions for task %s:", taskID)
 	for _, transition := range transitions.Transitions {
-		util.LogDebug("  ID: %s, Name: %s, To: %s, Category: %s", 
+		util.LogDebug("  ID: %s, Name: %s, To: %s, Category: %s",
 			transition.ID, transition.Name, transition.To.Name, transition.To.StatusCategory.Key)
 	}
-	
+
 	// Look for appropriate transition based on completion status
 	targetCategory := "new"
 	if completed {
 		targetCategory = "done"
 	}
-	
+
 	for _, transition := range transitions.Transitions {
 		if transition.To.StatusCategory.Key == targetCategory {
 			util.LogInfo("Selected transition ID %s for completed=%v", transition.ID, completed)
 			return transition.ID, nil
 		}
 	}
-	
+
 	// Fallback to common transition names
 	targetNames := []string{"To Do", "Open", "New"}
 	if completed {
 		targetNames = []string{"Done", "Closed", "Complete", "Resolved"}
 	}
-	
+
 	for _, targetName := range targetNames {
 		for _, transition := range transitions.Transitions {
 			if strings.Contains(strings.ToLower(transition.To.Name), strings.ToLower(targetName)) {
-				util.LogInfo("Selected transition ID %s by name match for completed=%v", transition.ID, completed)
+				util.LogInfo(
+					"Selected transition ID %s by name match for completed=%v",
+					transition.ID,
+					completed,
+				)
 				return transition.ID, nil
 			}
 		}
 	}
-	
+
 	return "", fmt.Errorf("no suitable transition found for completed=%v", completed)
 }
 
@@ -433,29 +436,33 @@ func (j *jira) ListTasksForEpic(epicID string) ([]JiraIssue, error) {
 		fmt.Sprintf("project=%s AND parent=%s", j.projectKey, epicID),
 		fmt.Sprintf("project=%s AND \"Epic Link\"=%s", j.projectKey, epicID),
 		fmt.Sprintf("project=%s AND cf[10014]=%s", j.projectKey, epicID), // Common epic link field
-		fmt.Sprintf("project=%s AND cf[10011]=%s", j.projectKey, epicID), // Another common epic link field
+		fmt.Sprintf(
+			"project=%s AND cf[10011]=%s",
+			j.projectKey,
+			epicID,
+		), // Another common epic link field
 	}
-	
+
 	for _, jql := range queries {
 		encodedJQL := url.QueryEscape(jql)
 		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
-		
+
 		b, err := j.client.MakeRequest("GET", requestURL, nil)
 		if err != nil {
 			continue
 		}
-		
+
 		tasks := JiraIssueResult{}
 		err = json.Unmarshal(b, &tasks)
 		if err != nil {
 			continue
 		}
-		
+
 		if len(tasks.Issues) > 0 {
 			return tasks.Issues, nil
 		}
 	}
-	
+
 	return []JiraIssue{}, nil
 }
 

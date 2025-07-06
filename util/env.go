@@ -1,9 +1,9 @@
 package util
 
 import (
+	"github.com/subosito/gotenv"
 	"os"
 	"strconv"
-	"github.com/subosito/gotenv"
 )
 
 func init() {
@@ -50,7 +50,6 @@ func GetJiraConfig() JiraConfig {
 		APIToken:   GetEnvStr("JIRA_API_TOKEN", ""),
 		ProjectKey: GetEnvStr("JIRA_PROJECT_KEY", ""),
 	}
-
 
 	return config
 }

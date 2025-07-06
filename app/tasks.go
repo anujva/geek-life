@@ -30,7 +30,6 @@ Or create a new Project (Press p,n).
 
 Help - https://bit.ly/cli-task`
 
-
 // TaskPane displays tasks of current TaskList or Project
 type TaskPane struct {
 	*tview.Flex
@@ -275,6 +274,7 @@ func (pane *TaskPane) LoadProjectTasks(project model.Project) {
 
 	pane.RemoveItem(pane.hint)
 	pane.AddItem(pane.newTask, 1, 0, false)
+	updateProjectHeader()
 }
 
 // LoadDynamicList loads tasks based on logic key
@@ -323,6 +323,7 @@ func (pane *TaskPane) LoadDynamicList(logic string) {
 	}
 
 	pane.RemoveItem(pane.hint)
+	updateProjectHeaderWithContext(logic)
 	removeThirdCol()
 }
 

@@ -360,7 +360,11 @@ func (pane *ProjectPane) importEpicsFromJira() {
 	if imported > 0 || updated > 0 {
 		message := ""
 		if imported > 0 && updated > 0 {
-			message = fmt.Sprintf("[lime]Imported %d new epics and updated %d existing projects with JIRA IDs", imported, updated)
+			message = fmt.Sprintf(
+				"[lime]Imported %d new epics and updated %d existing projects with JIRA IDs",
+				imported,
+				updated,
+			)
 		} else if imported > 0 {
 			message = fmt.Sprintf("[lime]Imported %d user-created epics from JIRA", imported)
 		} else {
@@ -505,7 +509,11 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 	}
 
 	statusBar.showForSeconds(
-		fmt.Sprintf("[lime]Linked %d projects to JIRA, removed %d duplicates", linkedCount, removedCount),
+		fmt.Sprintf(
+			"[lime]Linked %d projects to JIRA, removed %d duplicates",
+			linkedCount,
+			removedCount,
+		),
 		5,
 	)
 	pane.loadListItems(true)

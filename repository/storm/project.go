@@ -82,11 +82,11 @@ func (repo *projectRepository) SearchProjects(query string) ([]model.Project, er
 
 	var matchingProjects []model.Project
 	lowerQuery := strings.ToLower(query)
-	
+
 	for _, project := range allProjects {
 		// Search in title and JIRA ID
 		if strings.Contains(strings.ToLower(project.Title), lowerQuery) ||
-		   strings.Contains(strings.ToLower(project.Jira), lowerQuery) {
+			strings.Contains(strings.ToLower(project.Jira), lowerQuery) {
 			matchingProjects = append(matchingProjects, project)
 		}
 	}
