@@ -341,10 +341,50 @@ func (l *LinearTicketManager) ListEpics() ([]Epic, error) {
 }
 
 func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
-	query := `
-		query GetUserProjects {
+	// First get current user info
+	currentUserQuery := `
+		query GetCurrentUser {
 			viewer {
-				createdProjects {
+				id
+				email
+				displayName
+			}
+		}
+	`
+
+	userResp, err := l.makeRequest(currentUserQuery, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	var userResult struct {
+		Data struct {
+			Viewer struct {
+				ID          string `json:"id"`
+				Email       string `json:"email"`
+				DisplayName string `json:"displayName"`
+			} `json:"viewer"`
+		} `json:"data"`
+	}
+
+	err = json.Unmarshal(userResp, &userResult)
+	if err != nil {
+		return nil, err
+	}
+
+	currentUserID := userResult.Data.Viewer.ID
+
+	// Get team ID first
+	teamID, err := l.getTeamID()
+	if err != nil {
+		return nil, err
+	}
+
+	// Now get projects for the team and filter by creator
+	query := `
+		query GetTeamProjects($teamId: String!) {
+			team(id: $teamId) {
+				projects {
 					nodes {
 						id
 						name
@@ -361,15 +401,19 @@ func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
 		}
 	`
 
-	resp, err := l.makeRequest(query, nil)
+	variables := map[string]interface{}{
+		"teamId": teamID,
+	}
+
+	resp, err := l.makeRequest(query, variables)
 	if err != nil {
 		return nil, err
 	}
 
 	var result struct {
 		Data struct {
-			Viewer struct {
-				CreatedProjects struct {
+			Team struct {
+				Projects struct {
 					Nodes []struct {
 						ID          string `json:"id"`
 						Name        string `json:"name"`
@@ -381,8 +425,8 @@ func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
 							DisplayName string `json:"displayName"`
 						} `json:"creator"`
 					} `json:"nodes"`
-				} `json:"createdProjects"`
-			} `json:"viewer"`
+				} `json:"projects"`
+			} `json:"team"`
 		} `json:"data"`
 	}
 
@@ -391,19 +435,22 @@ func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
 		return nil, err
 	}
 
-	epics := make([]Epic, len(result.Data.Viewer.CreatedProjects.Nodes))
-	for i, project := range result.Data.Viewer.CreatedProjects.Nodes {
-		epics[i] = Epic{
-			ID:          project.ID,
-			Key:         project.ID,
-			Title:       project.Name,
-			Description: project.Description,
-			Status:      project.State,
-			Creator: User{
-				ID:          project.Creator.ID,
-				Email:       project.Creator.Email,
-				DisplayName: project.Creator.DisplayName,
-			},
+	// Filter projects created by current user
+	var epics []Epic
+	for _, project := range result.Data.Team.Projects.Nodes {
+		if project.Creator.ID == currentUserID {
+			epics = append(epics, Epic{
+				ID:          project.ID,
+				Key:         project.ID,
+				Title:       project.Name,
+				Description: project.Description,
+				Status:      project.State,
+				Creator: User{
+					ID:          project.Creator.ID,
+					Email:       project.Creator.Email,
+					DisplayName: project.Creator.DisplayName,
+				},
+			})
 		}
 	}
 
