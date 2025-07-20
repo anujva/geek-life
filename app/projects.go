@@ -94,7 +94,7 @@ func (pane *ProjectPane) addProjectList() {
 	pane.projectListStarting = pane.list.GetItemCount()
 
 	var err error
-	pane.projects, err = pane.repo.GetAll()
+	pane.projects, err = pane.repo.GetAllSortedByJiraDate()
 	if err != nil {
 		statusBar.showForSeconds("Could not load Projects: "+err.Error(), 5)
 		return
@@ -319,7 +319,7 @@ func (pane *ProjectPane) importEpicsFromTicketManager() {
 
 	// Reload projects to ensure we have the latest data
 	var err error
-	pane.projects, err = pane.repo.GetAll()
+	pane.projects, err = pane.repo.GetAllSortedByJiraDate()
 	if err != nil {
 		statusBar.showForSeconds("[red]Failed to load projects: "+err.Error(), 5)
 		return
@@ -341,20 +341,50 @@ func (pane *ProjectPane) importEpicsFromTicketManager() {
 		// Check if project already exists with this ticket ID
 		existingProject := pane.findProjectByJiraID(epic.Key)
 		if existingProject != nil {
+			util.LogInfo("Project already exists for epic %s: %s", epic.Key, existingProject.Title)
+			
+			// If project exists but has no creation date, update it
+			if existingProject.JiraCreatedDate == nil {
+				if createdDate, err := pane.parseJiraDate(epic.CreatedDate); err == nil {
+					existingProject.JiraCreatedDate = &createdDate
+					pane.repo.Update(existingProject)
+					
+					// Update in-memory project list
+					for i := range pane.projects {
+						if pane.projects[i].ID == existingProject.ID {
+							pane.projects[i].JiraCreatedDate = &createdDate
+							break
+						}
+					}
+					updated++
+				}
+			}
+			
+			// IMPORTANT: Import tasks for existing project too!
+			util.LogInfo("Importing tasks for existing project %s (epic %s)", existingProject.Title, epic.Key)
+			pane.importTasksForEpic(*existingProject, epic.Key)
+			
 			continue
 		}
 
 		// Check if there's a project with the same title but no ticket ID
 		existingProjectByTitle := pane.findProjectByTitle(epic.Title)
 		if existingProjectByTitle != nil && existingProjectByTitle.Jira == "" {
-			// Update existing project with ticket ID
+			// Update existing project with ticket ID and creation date
 			existingProjectByTitle.Jira = epic.Key
+			
+			// Use creation date directly from epic list
+			if createdDate, err := pane.parseJiraDate(epic.CreatedDate); err == nil {
+				existingProjectByTitle.JiraCreatedDate = &createdDate
+			}
+			
 			err := pane.repo.Update(existingProjectByTitle)
 			if err == nil {
 				// Update the in-memory project list
 				for i := range pane.projects {
 					if pane.projects[i].ID == existingProjectByTitle.ID {
 						pane.projects[i].Jira = epic.Key
+						pane.projects[i].JiraCreatedDate = existingProjectByTitle.JiraCreatedDate
 						break
 					}
 				}
@@ -365,8 +395,13 @@ func (pane *ProjectPane) importEpicsFromTicketManager() {
 			continue
 		}
 
-		// Create new project from epic with ticket ID
-		project, err := pane.repo.CreateWithJira(epic.Title, epic.Key)
+		// Create new project from epic with ticket ID and creation date
+		var createdDate *time.Time
+		if parsed, err := pane.parseJiraDate(epic.CreatedDate); err == nil {
+			createdDate = &parsed
+		}
+		
+		project, err := pane.repo.CreateWithJiraAndDate(epic.Title, epic.Key, createdDate)
 		if err != nil {
 			continue
 		}
@@ -405,18 +440,34 @@ func (pane *ProjectPane) importEpicsFromTicketManager() {
 // importTasksForEpic imports tasks for a specific epic
 func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey string) {
 	if pane.ticketManager == nil {
+		util.LogWarning("No ticket manager available for importing tasks")
 		return
 	}
+
+	util.LogInfo("=== IMPORTING TASKS FOR EPIC %s ===", epicKey)
+	util.LogInfo("Project: %s (ID: %d)", project.Title, project.ID)
 
 	tasks, err := pane.ticketManager.ListTasksForEpic(epicKey)
 	if err != nil {
+		util.LogError("Failed to get tasks for epic %s: %v", epicKey, err)
+		statusBar.showForSeconds(fmt.Sprintf("[red]Failed to get tasks for %s: %v", epicKey, err), 5)
 		return
 	}
 
+	util.LogInfo("Found %d tasks in epic %s", len(tasks), epicKey)
+	
+	importedCount := 0
+	skippedCount := 0
+	errorCount := 0
+
 	for _, task := range tasks {
+		util.LogInfo("Processing task: %s - %s", task.Key, task.Title)
+		
 		// Check if task already exists
 		existing, err := taskRepo.GetByJiraID(task.Key)
 		if err == nil && existing != nil {
+			util.LogInfo("  Task %s already exists, skipping", task.Key)
+			skippedCount++
 			continue
 		}
 
@@ -429,7 +480,29 @@ func (pane *ProjectPane) importTasksForEpic(project model.Project, epicKey strin
 			JiraID:    task.Key,
 		}
 
-		_ = taskRepo.CreateTask(&newTask)
+		err = taskRepo.CreateTask(&newTask)
+		if err != nil {
+			util.LogError("  Failed to create task %s: %v", task.Key, err)
+			errorCount++
+		} else {
+			util.LogInfo("  ✅ Created task %s", task.Key)
+			importedCount++
+		}
+	}
+	
+	util.LogInfo("=== TASK IMPORT SUMMARY FOR %s ===", epicKey)
+	util.LogInfo("  Imported: %d tasks", importedCount)
+	util.LogInfo("  Skipped: %d tasks (already exist)", skippedCount)
+	util.LogInfo("  Errors: %d tasks", errorCount)
+	util.LogInfo("=====================================")
+	
+	// Show status message
+	if importedCount > 0 {
+		statusBar.showForSeconds(fmt.Sprintf("[lime]Imported %d tasks for %s", importedCount, epicKey), 3)
+	} else if skippedCount > 0 && errorCount == 0 {
+		statusBar.showForSeconds(fmt.Sprintf("[yellow]All tasks for %s already exist", epicKey), 3)
+	} else if errorCount > 0 {
+		statusBar.showForSeconds(fmt.Sprintf("[red]Failed to import %d tasks for %s", errorCount, epicKey), 5)
 	}
 }
 
@@ -469,7 +542,7 @@ func (pane *ProjectPane) cleanupAndRelinkProjects() {
 
 	// Reload projects to ensure we have the latest data
 	var err error
-	pane.projects, err = pane.repo.GetAll()
+	pane.projects, err = pane.repo.GetAllSortedByJiraDate()
 	if err != nil {
 		statusBar.showForSeconds("[red]Failed to load projects: "+err.Error(), 5)
 		return
@@ -634,4 +707,38 @@ func (pane *ProjectPane) fixOrphanedTasks() {
 	} else {
 		statusBar.showForSeconds("[yellow]Select a project first", 3)
 	}
+}
+
+// parseJiraDate parses JIRA's ISO 8601 date format
+func (pane *ProjectPane) parseJiraDate(dateStr string) (time.Time, error) {
+	// JIRA typically returns dates in RFC3339 format like "2023-10-15T14:30:00.000+0000"
+	layouts := []string{
+		time.RFC3339,
+		"2006-01-02T15:04:05.000-0700",
+		"2006-01-02T15:04:05.000+0000",
+		"2006-01-02T15:04:05-0700",
+		"2006-01-02T15:04:05+0000",
+	}
+	
+	for _, layout := range layouts {
+		if t, err := time.Parse(layout, dateStr); err == nil {
+			return t, nil
+		}
+	}
+	
+	return time.Time{}, fmt.Errorf("unable to parse date: %s", dateStr)
+}
+
+// createProjectWithJiraAndDate creates a new project with JIRA ticket ID and creation date
+func (pane *ProjectPane) createProjectWithJiraAndDate(title, jiraKey string) (model.Project, error) {
+	var createdDate *time.Time
+	
+	// Fetch epic details to get creation date
+	if epicDetails, err := pane.ticketManager.DescribeEpic(jiraKey); err == nil {
+		if parsed, err := pane.parseJiraDate(epicDetails.CreatedDate); err == nil {
+			createdDate = &parsed
+		}
+	}
+	
+	return pane.repo.CreateWithJiraAndDate(title, jiraKey, createdDate)
 }

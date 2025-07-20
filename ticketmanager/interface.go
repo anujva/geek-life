@@ -22,6 +22,7 @@ type Epic struct {
 	Description string `json:"description"`
 	Status      string `json:"status"`
 	Creator     User   `json:"creator"`
+	CreatedDate string `json:"createdDate"`
 }
 
 type Task struct {

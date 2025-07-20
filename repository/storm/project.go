@@ -1,7 +1,9 @@
 package storm
 
 import (
+	"sort"
 	"strings"
+	"time"
 
 	"github.com/asdine/storm/v3"
 
@@ -23,6 +25,40 @@ func (repo *projectRepository) GetAll() ([]model.Project, error) {
 	err := repo.DB.All(&projects)
 
 	return projects, err
+}
+
+func (repo *projectRepository) GetAllSortedByJiraDate() ([]model.Project, error) {
+	var projects []model.Project
+	err := repo.DB.All(&projects)
+	if err != nil {
+		return projects, err
+	}
+
+	// Sort projects: JIRA projects by creation date (newest first), then non-JIRA projects
+	sort.Slice(projects, func(i, j int) bool {
+		projectI := projects[i]
+		projectJ := projects[j]
+
+		// Both have JIRA creation dates - sort by date (newest first)
+		if projectI.JiraCreatedDate != nil && projectJ.JiraCreatedDate != nil {
+			return projectI.JiraCreatedDate.After(*projectJ.JiraCreatedDate)
+		}
+
+		// Only projectI has JIRA date - it comes first
+		if projectI.JiraCreatedDate != nil && projectJ.JiraCreatedDate == nil {
+			return true
+		}
+
+		// Only projectJ has JIRA date - it comes first
+		if projectI.JiraCreatedDate == nil && projectJ.JiraCreatedDate != nil {
+			return false
+		}
+
+		// Neither has JIRA date - sort by title alphabetically
+		return projectI.Title < projectJ.Title
+	})
+
+	return projects, nil
 }
 
 func (repo *projectRepository) GetByID(id int64) (model.Project, error) {
@@ -51,6 +87,17 @@ func (repo *projectRepository) CreateWithJira(title, jiraID string) (model.Proje
 	project := model.Project{
 		Title: title,
 		Jira:  jiraID,
+	}
+
+	err := repo.DB.Save(&project)
+	return project, err
+}
+
+func (repo *projectRepository) CreateWithJiraAndDate(title, jiraID string, createdDate *time.Time) (model.Project, error) {
+	project := model.Project{
+		Title:           title,
+		Jira:            jiraID,
+		JiraCreatedDate: createdDate,
 	}
 
 	err := repo.DB.Save(&project)

@@ -271,6 +271,7 @@ func (l *LinearTicketManager) ListEpics() ([]Epic, error) {
 					name
 					description
 					state
+					createdAt
 					creator {
 						id
 						email
@@ -306,6 +307,7 @@ func (l *LinearTicketManager) ListEpics() ([]Epic, error) {
 					Name        string `json:"name"`
 					Description string `json:"description"`
 					State       string `json:"state"`
+					CreatedAt   string `json:"createdAt"`
 					Creator     struct {
 						ID          string `json:"id"`
 						Email       string `json:"email"`
@@ -334,6 +336,7 @@ func (l *LinearTicketManager) ListEpics() ([]Epic, error) {
 				Email:       project.Creator.Email,
 				DisplayName: project.Creator.DisplayName,
 			},
+			CreatedDate: project.CreatedAt,
 		}
 	}
 
@@ -390,6 +393,7 @@ func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
 						name
 						description
 						state
+						createdAt
 						creator {
 							id
 							email
@@ -419,6 +423,7 @@ func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
 						Name        string `json:"name"`
 						Description string `json:"description"`
 						State       string `json:"state"`
+						CreatedAt   string `json:"createdAt"`
 						Creator     struct {
 							ID          string `json:"id"`
 							Email       string `json:"email"`
@@ -450,6 +455,7 @@ func (l *LinearTicketManager) ListUserEpics() ([]Epic, error) {
 					Email:       project.Creator.Email,
 					DisplayName: project.Creator.DisplayName,
 				},
+				CreatedDate: project.CreatedAt,
 			})
 		}
 	}
@@ -465,6 +471,7 @@ func (l *LinearTicketManager) DescribeEpic(epicID string) (*Epic, error) {
 				name
 				description
 				state
+				createdAt
 				creator {
 					id
 					email
@@ -490,6 +497,7 @@ func (l *LinearTicketManager) DescribeEpic(epicID string) (*Epic, error) {
 				Name        string `json:"name"`
 				Description string `json:"description"`
 				State       string `json:"state"`
+				CreatedAt   string `json:"createdAt"`
 				Creator     struct {
 					ID          string `json:"id"`
 					Email       string `json:"email"`
@@ -516,6 +524,7 @@ func (l *LinearTicketManager) DescribeEpic(epicID string) (*Epic, error) {
 			Email:       project.Creator.Email,
 			DisplayName: project.Creator.DisplayName,
 		},
+		CreatedDate: project.CreatedAt,
 	}, nil
 }
 

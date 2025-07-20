@@ -52,6 +52,7 @@ func (j *JiraTicketManager) ListEpics() ([]Epic, error) {
 				Email:       je.Fields.Creator.EmailAddress,
 				DisplayName: je.Fields.Creator.DisplayName,
 			},
+			CreatedDate: je.Fields.Created,
 		}
 	}
 
@@ -77,6 +78,7 @@ func (j *JiraTicketManager) ListUserEpics() ([]Epic, error) {
 				Email:       je.Fields.Creator.EmailAddress,
 				DisplayName: je.Fields.Creator.DisplayName,
 			},
+			CreatedDate: je.Fields.Created,
 		}
 	}
 
@@ -100,6 +102,7 @@ func (j *JiraTicketManager) DescribeEpic(epicID string) (*Epic, error) {
 			Email:       jiraEpic.Fields.Creator.EmailAddress,
 			DisplayName: jiraEpic.Fields.Creator.DisplayName,
 		},
+		CreatedDate: jiraEpic.Fields.Created,
 	}, nil
 }
 

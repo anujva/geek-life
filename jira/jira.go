@@ -350,55 +350,66 @@ func (j *jira) ListEpics() ([]JiraIssue, error) {
 }
 
 func (j *jira) ListGeekLifeEpics() ([]JiraIssue, error) {
-	// Use JQL to filter epics created by the current user
-	// Try multiple formats for username matching
-	queries := []string{
-		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=\"%s\"", j.projectKey, j.username),
-		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=%s", j.projectKey, j.username),
-		fmt.Sprintf("project=%s AND issuetype=Epic AND creator=currentUser()", j.projectKey),
+	// Get all epics and then filter by user involvement (created OR has tasks assigned)
+	allEpics, err := j.ListEpics()
+	if err != nil {
+		return nil, err
 	}
-
-	util.LogInfo(
-		"Trying to find epics for user: %s in project: %s",
-		j.username,
-		j.projectKey,
-	)
-
-	for i, jql := range queries {
-		// Properly URL encode the JQL query
-		encodedJQL := url.QueryEscape(jql)
-		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
-		util.LogDebug("Attempt %d - JQL: %s", i+1, jql)
-		util.LogDebug("Attempt %d - Encoded URL: %s", i+1, requestURL)
-
-		b, err := j.client.MakeRequest("GET", requestURL, nil)
-		if err != nil {
-			util.LogWarning("Error with query %d: %v", i+1, err)
+	
+	util.LogInfo("Got %d total epics, filtering for user involvement: %s", len(allEpics), j.username)
+	
+	var userEpics []JiraIssue
+	
+	for _, epic := range allEpics {
+		util.LogDebug("Checking epic: %s (%s)", epic.Fields.Summary, epic.Key)
+		
+		// Check if user created this epic
+		userCreated := epic.Fields.Creator.EmailAddress == j.username ||
+			epic.Fields.Creator.DisplayName == j.username ||
+			strings.ToLower(epic.Fields.Creator.EmailAddress) == strings.ToLower(j.username)
+		
+		if userCreated {
+			util.LogInfo("Epic %s created by user", epic.Key)
+			userEpics = append(userEpics, epic)
 			continue
 		}
-
-		epics := JiraIssueResult{}
-		err = json.Unmarshal(b, &epics)
+		
+		// Check if user has tasks in this epic
+		userHasTasks, err := j.userHasTasksInEpic(epic.Key)
 		if err != nil {
-			util.LogError("Error unmarshaling response for query %d: %v", i+1, err)
+			util.LogWarning("Error checking tasks for epic %s: %v", epic.Key, err)
 			continue
 		}
-
-		util.LogInfo("Query %d returned %d epics", i+1, len(epics.Issues))
-		if len(epics.Issues) > 0 {
-			// Log the first epic's creator info for debugging
-			if len(epics.Issues) > 0 {
-				util.LogDebug("First epic creator: %s (email: %s)",
-					epics.Issues[0].Fields.Creator.DisplayName,
-					epics.Issues[0].Fields.Creator.EmailAddress)
-			}
-			return epics.Issues, nil
+		
+		if userHasTasks {
+			util.LogInfo("Epic %s has tasks assigned to user", epic.Key)
+			userEpics = append(userEpics, epic)
 		}
 	}
+	
+	util.LogInfo("Found %d epics with user involvement", len(userEpics))
+	
+	return userEpics, nil
+}
 
-	// If no queries returned results, fall back to getting all epics and filter manually
-	util.LogInfo("No filtered results, falling back to manual filtering")
-	return j.filterEpicsByUser()
+// userHasTasksInEpic checks if the current user has any tasks assigned in the given epic
+func (j *jira) userHasTasksInEpic(epicID string) (bool, error) {
+	// Get tasks for this epic and check if any are assigned to the current user
+	tasks, err := j.ListTasksForEpic(epicID)
+	if err != nil {
+		return false, err
+	}
+	
+	for _, task := range tasks {
+		if task.Fields.Assignee.EmailAddress == j.username ||
+			task.Fields.Assignee.DisplayName == j.username ||
+			strings.ToLower(task.Fields.Assignee.EmailAddress) == strings.ToLower(j.username) {
+			util.LogDebug("Found task %s assigned to user in epic %s", task.Key, epicID)
+			return true, nil
+		}
+	}
+	
+	return false, nil
 }
 
 func (j *jira) filterEpicsByUser() ([]JiraIssue, error) {
