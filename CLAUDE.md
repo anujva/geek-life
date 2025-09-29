@@ -68,9 +68,11 @@ Set the `TICKET_PROVIDER` environment variable to choose your provider:
 **JIRA Configuration:**
 Set these environment variables to enable JIRA integration:
 - `JIRA_URL` - Your JIRA instance URL
-- `JIRA_USERNAME` - Your JIRA username/email  
+- `JIRA_USERNAME` - Your JIRA username/email
 - `JIRA_API_TOKEN` - Your JIRA API token
 - `JIRA_PROJECT_KEY` - The JIRA project key to work with
+
+**Note:** The application now uses JIRA REST API v3 endpoints to avoid deprecated API issues. If you encounter 410 errors, ensure your JIRA instance supports the v3 API and check your authentication credentials.
 
 **Linear Configuration:**
 Set these environment variables to enable Linear integration:

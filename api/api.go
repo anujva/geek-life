@@ -69,7 +69,19 @@ func (c *Client) MakeRequest(method, url string, payload []byte) ([]byte, error)
 
 	// Log response for debugging
 	if resp.StatusCode >= 400 {
-		return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		// Handle specific error codes with helpful messages
+		switch resp.StatusCode {
+		case 410:
+			return nil, fmt.Errorf("HTTP 410 Gone: API endpoint has been deprecated and is no longer available. Response: %s. Please check Atlassian's migration documentation at https://developer.atlassian.com/cloud/jira/platform/rest/v3/intro/", string(body))
+		case 401:
+			return nil, fmt.Errorf("HTTP 401 Unauthorized: Authentication failed. Please check your JIRA credentials and API token. Response: %s", string(body))
+		case 403:
+			return nil, fmt.Errorf("HTTP 403 Forbidden: Access denied. Please check your permissions in JIRA. Response: %s", string(body))
+		case 404:
+			return nil, fmt.Errorf("HTTP 404 Not Found: Resource not found. Please check the URL and resource ID. Response: %s", string(body))
+		default:
+			return nil, fmt.Errorf("HTTP %d: %s", resp.StatusCode, string(body))
+		}
 	}
 
 	return body, nil

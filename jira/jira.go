@@ -3,7 +3,6 @@ package jira
 import (
 	"encoding/json"
 	"fmt"
-	"net/url"
 	"strings"
 
 	"github.com/ajaxray/geek-life/api"
@@ -54,7 +53,7 @@ func (j *jira) ensureConfigLoaded() error {
 func (j *jira) UpdateConfig() error {
 	b, err := j.client.MakeRequest(
 		"GET",
-		"/rest/api/2/field",
+		"/rest/api/3/field",
 		nil,
 	)
 	if err != nil {
@@ -124,7 +123,7 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 
 	util.LogDebug("Epic creation payload: %s", string(payloadBytes))
 
-	url := "/rest/api/2/issue"
+	url := "/rest/api/3/issue"
 	b, err := j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
 		util.LogError("Epic creation failed: %v", err)
@@ -158,7 +157,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 	if err != nil {
 		return "", err
 	}
-	url := fmt.Sprintf("/rest/api/2/issue/%s", epicID)
+	url := fmt.Sprintf("/rest/api/3/issue/%s", epicID)
 	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
 	if err != nil {
 		return "", err
@@ -196,7 +195,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 		return "", err
 	}
 
-	url := "/rest/api/2/issue"
+	url := "/rest/api/3/issue"
 	b, err := j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
 		return "", err
@@ -213,7 +212,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 
 func (j *jira) getTransitionID(taskID string, completed bool) (string, error) {
 	// Get available transitions for this task
-	url := fmt.Sprintf("/rest/api/2/issue/%s/transitions", taskID)
+	url := fmt.Sprintf("/rest/api/3/issue/%s/transitions", taskID)
 	b, err := j.client.MakeRequest("GET", url, nil)
 	if err != nil {
 		return "", err
@@ -299,7 +298,7 @@ func (j *jira) UpdateTask(
 		return err
 	}
 	util.LogDebug("Task update payload: %s", payloadBytes)
-	url := fmt.Sprintf("/rest/api/2/issue/%s", taskID)
+	url := fmt.Sprintf("/rest/api/3/issue/%s", taskID)
 	b, err := j.client.MakeRequest("PUT", url, payloadBytes)
 	if err != nil {
 		return err
@@ -324,7 +323,7 @@ func (j *jira) UpdateTask(
 		return err
 	}
 	util.LogDebug("Task update payload: %s", payloadBytes)
-	url = fmt.Sprintf("/rest/api/2/issue/%s/transitions", taskID)
+	url = fmt.Sprintf("/rest/api/3/issue/%s/transitions", taskID)
 	_, err = j.client.MakeRequest("POST", url, payloadBytes)
 	if err != nil {
 		util.LogError("Error while calling transitions: %+v", err)
@@ -335,12 +334,37 @@ func (j *jira) UpdateTask(
 
 func (j *jira) ListEpics() ([]JiraIssue, error) {
 	jql := fmt.Sprintf("project=%s AND issuetype=Epic", j.projectKey)
-	encodedJQL := url.QueryEscape(jql)
-	requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
-	b, err := j.client.MakeRequest("GET", requestURL, nil)
-	if err != nil {
-		return nil, err
+
+	// Use the new JQL search API endpoint with POST method
+	requestURL := "/rest/api/3/search/jql"
+
+	// Prepare the request payload with JQL and required fields
+	payload := map[string]interface{}{
+		"jql": jql,
+		"fields": []string{
+			"key",
+			"summary",
+			"description",
+			"creator",
+			"assignee",
+			"status",
+			"created",
+			"updated",
+		},
+		"maxResults": 100, // Reasonable limit to prevent large responses
 	}
+
+	payloadBytes, err := json.Marshal(payload)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal JQL request payload: %w", err)
+	}
+
+	util.LogInfo("Making JIRA API call (v3 JQL): %s with JQL: %s", requestURL, jql)
+	b, err := j.client.MakeRequest("POST", requestURL, payloadBytes)
+	if err != nil {
+		return nil, fmt.Errorf("JIRA API v3 JQL search failed: %w", err)
+	}
+
 	epics := JiraIssueResult{}
 	err = json.Unmarshal(b, &epics)
 	if err != nil {
@@ -350,46 +374,72 @@ func (j *jira) ListEpics() ([]JiraIssue, error) {
 }
 
 func (j *jira) ListGeekLifeEpics() ([]JiraIssue, error) {
+	util.LogInfo("Starting epic import - calling ListEpics()")
 	// Get all epics and then filter by user involvement (created OR has tasks assigned)
 	allEpics, err := j.ListEpics()
 	if err != nil {
-		return nil, err
+		util.LogError("Failed to list epics: %v", err)
+		return nil, fmt.Errorf("failed to list epics - this might be due to API changes. Try updating your JIRA instance or check API permissions: %w", err)
 	}
-	
+
 	util.LogInfo("Got %d total epics, filtering for user involvement: %s", len(allEpics), j.username)
-	
+
+	// If no epics found, return empty list instead of failing
+	if len(allEpics) == 0 {
+		util.LogInfo("No epics found in project %s", j.projectKey)
+		return []JiraIssue{}, nil
+	}
+
 	var userEpics []JiraIssue
-	
+
 	for _, epic := range allEpics {
 		util.LogDebug("Checking epic: %s (%s)", epic.Fields.Summary, epic.Key)
-		
-		// Check if user created this epic
-		userCreated := epic.Fields.Creator.EmailAddress == j.username ||
-			epic.Fields.Creator.DisplayName == j.username ||
-			strings.ToLower(epic.Fields.Creator.EmailAddress) == strings.ToLower(j.username)
-		
+
+		// Check if user created this epic - use multiple matching strategies
+		userCreated := j.isUserMatch(epic.Fields.Creator.EmailAddress, epic.Fields.Creator.DisplayName, epic.Fields.Creator.AccountID)
+
 		if userCreated {
 			util.LogInfo("Epic %s created by user", epic.Key)
 			userEpics = append(userEpics, epic)
 			continue
 		}
-		
-		// Check if user has tasks in this epic
+
+		// Check if user has tasks in this epic (with error resilience)
 		userHasTasks, err := j.userHasTasksInEpic(epic.Key)
 		if err != nil {
-			util.LogWarning("Error checking tasks for epic %s: %v", epic.Key, err)
+			util.LogWarning("Error checking tasks for epic %s (continuing): %v", epic.Key, err)
 			continue
 		}
-		
+
 		if userHasTasks {
 			util.LogInfo("Epic %s has tasks assigned to user", epic.Key)
 			userEpics = append(userEpics, epic)
 		}
 	}
-	
+
 	util.LogInfo("Found %d epics with user involvement", len(userEpics))
-	
+
 	return userEpics, nil
+}
+
+// isUserMatch checks if the given user details match the current user using multiple strategies
+func (j *jira) isUserMatch(emailAddress, displayName, accountID string) bool {
+	// Primary match: email address (most reliable)
+	if emailAddress != "" && strings.EqualFold(emailAddress, j.username) {
+		return true
+	}
+
+	// Secondary match: display name
+	if displayName != "" && strings.EqualFold(displayName, j.username) {
+		return true
+	}
+
+	// Tertiary match: account ID (if username happens to be an account ID)
+	if accountID != "" && accountID == j.username {
+		return true
+	}
+
+	return false
 }
 
 // userHasTasksInEpic checks if the current user has any tasks assigned in the given epic
@@ -399,16 +449,14 @@ func (j *jira) userHasTasksInEpic(epicID string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	
+
 	for _, task := range tasks {
-		if task.Fields.Assignee.EmailAddress == j.username ||
-			task.Fields.Assignee.DisplayName == j.username ||
-			strings.ToLower(task.Fields.Assignee.EmailAddress) == strings.ToLower(j.username) {
+		if j.isUserMatch(task.Fields.Assignee.EmailAddress, task.Fields.Assignee.DisplayName, task.Fields.Assignee.AccountID) {
 			util.LogDebug("Found task %s assigned to user in epic %s", task.Key, epicID)
 			return true, nil
 		}
 	}
-	
+
 	return false, nil
 }
 
@@ -423,15 +471,14 @@ func (j *jira) filterEpicsByUser() ([]JiraIssue, error) {
 
 	var userEpics []JiraIssue
 	for _, epic := range allEpics {
-		util.LogDebug("Epic: %s, Creator email: %s, Creator name: %s",
+		util.LogDebug("Epic: %s, Creator email: %s, Creator name: %s, Creator ID: %s",
 			epic.Fields.Summary,
 			epic.Fields.Creator.EmailAddress,
-			epic.Fields.Creator.DisplayName)
+			epic.Fields.Creator.DisplayName,
+			epic.Fields.Creator.AccountID)
 
-		// Try multiple matching criteria
-		if epic.Fields.Creator.EmailAddress == j.username ||
-			epic.Fields.Creator.DisplayName == j.username ||
-			strings.ToLower(epic.Fields.Creator.EmailAddress) == strings.ToLower(j.username) {
+		// Use the improved user matching function
+		if j.isUserMatch(epic.Fields.Creator.EmailAddress, epic.Fields.Creator.DisplayName, epic.Fields.Creator.AccountID) {
 			userEpics = append(userEpics, epic)
 			util.LogInfo("Matched epic: %s", epic.Fields.Summary)
 		}
@@ -454,31 +501,55 @@ func (j *jira) ListTasksForEpic(epicID string) ([]JiraIssue, error) {
 		), // Another common epic link field
 	}
 
-	for _, jql := range queries {
-		encodedJQL := url.QueryEscape(jql)
-		requestURL := fmt.Sprintf("/rest/api/2/search?jql=%s", encodedJQL)
+	requestURL := "/rest/api/3/search/jql"
 
-		b, err := j.client.MakeRequest("GET", requestURL, nil)
+	for _, jql := range queries {
+		// Prepare the request payload with JQL and required fields
+		payload := map[string]interface{}{
+			"jql": jql,
+			"fields": []string{
+				"key",
+				"summary",
+				"description",
+				"assignee",
+				"status",
+				"created",
+				"updated",
+			},
+			"maxResults": 100,
+		}
+
+		payloadBytes, err := json.Marshal(payload)
 		if err != nil {
+			util.LogWarning("Failed to marshal JQL payload for query: %s", jql)
+			continue
+		}
+
+		b, err := j.client.MakeRequest("POST", requestURL, payloadBytes)
+		if err != nil {
+			util.LogDebug("JQL query failed: %s, error: %v", jql, err)
 			continue
 		}
 
 		tasks := JiraIssueResult{}
 		err = json.Unmarshal(b, &tasks)
 		if err != nil {
+			util.LogDebug("Failed to unmarshal response for query: %s", jql)
 			continue
 		}
 
 		if len(tasks.Issues) > 0 {
+			util.LogInfo("Found %d tasks for epic %s using query: %s", len(tasks.Issues), epicID, jql)
 			return tasks.Issues, nil
 		}
 	}
 
+	util.LogInfo("No tasks found for epic %s", epicID)
 	return []JiraIssue{}, nil
 }
 
 func (j *jira) DescribeEpic(epicID string) (*JiraIssue, error) {
-	url := fmt.Sprintf("/rest/api/2/issue/%s", epicID)
+	url := fmt.Sprintf("/rest/api/3/issue/%s", epicID)
 	b, err := j.client.MakeRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -492,7 +563,7 @@ func (j *jira) DescribeEpic(epicID string) (*JiraIssue, error) {
 }
 
 func (j *jira) DescribeTask(taskID string) (*JiraIssue, error) {
-	url := fmt.Sprintf("/rest/api/2/issue/%s", taskID)
+	url := fmt.Sprintf("/rest/api/3/issue/%s", taskID)
 	b, err := j.client.MakeRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
