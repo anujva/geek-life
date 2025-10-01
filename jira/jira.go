@@ -90,13 +90,30 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 		// Continue with basic payload if config loading fails
 	}
 
+	// Convert description to Atlassian Document Format (ADF)
+	adfDescription := map[string]interface{}{
+		"type":    "doc",
+		"version": 1,
+		"content": []map[string]interface{}{
+			{
+				"type": "paragraph",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": description,
+					},
+				},
+			},
+		},
+	}
+
 	// Build the basic payload
 	fields := map[string]interface{}{
 		"project": map[string]string{
 			"key": j.projectKey,
 		},
 		"summary":     title,
-		"description": description,
+		"description": adfDescription,
 		"issuetype": map[string]string{
 			"name": "Epic",
 		},
@@ -139,6 +156,23 @@ func (j *jira) CreateEpic(title, description string) (string, error) {
 }
 
 func (j *jira) UpdateEpic(title, description string, epicID string) (string, error) {
+	// Convert description to Atlassian Document Format (ADF)
+	adfDescription := map[string]interface{}{
+		"type":    "doc",
+		"version": 1,
+		"content": []map[string]interface{}{
+			{
+				"type": "paragraph",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": description,
+					},
+				},
+			},
+		},
+	}
+
 	// Construct the request payload
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
@@ -146,7 +180,7 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 				"key": j.projectKey,
 			},
 			"summary":     title,
-			"description": description,
+			"description": adfDescription,
 			"issuetype": map[string]string{
 				"name": "Epic",
 			},
@@ -172,6 +206,23 @@ func (j *jira) UpdateEpic(title, description string, epicID string) (string, err
 }
 
 func (j *jira) CreateTask(title, description string, epicID string) (string, error) {
+	// Convert description to Atlassian Document Format (ADF)
+	adfDescription := map[string]interface{}{
+		"type":    "doc",
+		"version": 1,
+		"content": []map[string]interface{}{
+			{
+				"type": "paragraph",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": description,
+					},
+				},
+			},
+		},
+	}
+
 	// Try simple task creation first
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
@@ -179,7 +230,7 @@ func (j *jira) CreateTask(title, description string, epicID string) (string, err
 				"key": j.projectKey,
 			},
 			"summary":     title,
-			"description": description,
+			"description": adfDescription,
 			"issuetype": map[string]string{
 				"name": "Task",
 			},
@@ -283,6 +334,23 @@ func (j *jira) UpdateTask(
 	completed bool,
 	taskID string,
 ) error {
+	// Convert description to Atlassian Document Format (ADF)
+	adfDescription := map[string]interface{}{
+		"type":    "doc",
+		"version": 1,
+		"content": []map[string]interface{}{
+			{
+				"type": "paragraph",
+				"content": []map[string]interface{}{
+					{
+						"type": "text",
+						"text": description,
+					},
+				},
+			},
+		},
+	}
+
 	// Construct the request payload
 	payload := map[string]interface{}{
 		"fields": map[string]interface{}{
@@ -290,7 +358,7 @@ func (j *jira) UpdateTask(
 				"key": j.projectKey,
 			},
 			"summary":     title,
-			"description": description,
+			"description": adfDescription,
 		},
 	}
 	payloadBytes, err := json.Marshal(payload)
